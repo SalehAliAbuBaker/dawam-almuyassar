@@ -48,6 +48,11 @@ input::placeholder,textarea::placeholder{color:#8a9c94!important;opacity:1;font-
   body.dawam-printing #dawamPrintHost img{display:block!important;width:210mm!important;height:297mm!important;max-width:none!important;max-height:none!important;object-fit:fill!important;break-after:page;page-break-after:always;margin:0!important;padding:0!important}
   body.dawam-printing #dawamPrintHost img:last-child{break-after:auto;page-break-after:auto}
 }
+
+/* Prefilled settings/selects retain a light hint inside the border until edited. */
+.field.compact-inline-field{position:relative}
+.field.compact-inline-field.hint-visible:not(:focus-within)::before{content:attr(data-compact-hint);position:absolute;top:2px;right:13px;z-index:1;font-size:10px;line-height:1.4;font-weight:400;color:#8a9c94;pointer-events:none}
+.field.compact-inline-field.hint-visible>input,.field.compact-inline-field.hint-visible>select,.field.compact-inline-field.hint-visible>textarea{padding-top:19px;padding-bottom:5px}
 </style>
 </head>
 <body>
@@ -163,22 +168,18 @@ const dawamEnhancement=(function dawamFeatureImplementation(){
       if(!hint)continue;
       if(!control.getAttribute('aria-label'))control.setAttribute('aria-label',hint);
       if(!control.title)control.title=hint;
-      if(control.tagName==='SELECT'){
-        label.classList.add('compact-sr-label');
-        continue;
-      }
       if(control.type==='file')continue;
       label.classList.add('compact-sr-label');
-      if(['date','time','datetime-local'].includes(control.type)){
-        field.classList.add('compact-datetime');
-        field.setAttribute('data-compact-hint',hint);
-        const sync=()=>field.classList.toggle('is-empty',!control.value);
-        sync();
-        control.addEventListener('input',sync);
-        control.addEventListener('change',sync);
-      }else if(!control.hasAttribute('placeholder')){
+      field.classList.add('compact-inline-field');
+      field.setAttribute('data-compact-hint',hint);
+      if(!['date','time','datetime-local'].includes(control.type)&&control.tagName!=='SELECT'&&!control.hasAttribute('placeholder')){
         control.setAttribute('placeholder',hint);
       }
+      const sync=()=>field.classList.toggle('hint-visible',!field.dataset.hintEdited&&(!!control.value||['date','time','datetime-local'].includes(control.type)));
+      sync();
+      const onEdit=()=>{field.dataset.hintEdited='1';sync()};
+      control.addEventListener('input',onEdit);
+      control.addEventListener('change',onEdit);
     }
     for(const label of root.querySelectorAll('#onlineFields > label[for],#setupFields > label[for]')){
       if(label.classList.contains('compact-sr-label'))continue;

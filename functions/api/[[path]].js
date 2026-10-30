@@ -106,7 +106,7 @@ async function issueSession(db, user) {
   return setCookie(raw, SESSION_HOURS * 3600);
 }
 function settingsWhitelist(input) {
-  const fields = ['org_name','start_time','end_time','work_days','weekly_off','grace_minutes','permission_minutes',
+  const fields = ['org_name','start_time','end_time','thursday_end_time','work_days','weekly_off','grace_minutes','permission_minutes',
     'annual_leave_days','monthly_divisor','daily_minutes','cycle_start_day','cycle_end_day','payday',
     'incentive_threshold','incentive_penalty_percent','deduct_from','deductions_enabled',
     'closing_role','holiday_payday','currency'];
@@ -124,7 +124,7 @@ function settingsWhitelist(input) {
     if (!Number.isFinite(value)||value<min||value>max) throw Object.assign(new Error('قيمة خارج النطاق: '+key),{status:400});
     result[key]=value;
   }
-  for (const key of ['start_time','end_time','incentive_threshold']) if (result[key]!==undefined && !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(result[key]))) {
+  for (const key of ['start_time','end_time','thursday_end_time','incentive_threshold']) if (result[key]!==undefined && !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(result[key]))) {
     throw Object.assign(new Error('الوقت غير صحيح: '+key),{status:400});
   }
   // Stage 1 has no validated legal payroll rules; financial deductions stay disabled.
@@ -306,6 +306,61 @@ async function settings(db,user,method,request){
   return response({settings:clean});
 }
 
+
+/* Attendance schedule v0.2.6: local Yemen time (Asia/Aden), Friday weekly rest.
+   This endpoint reports observed elapsed time, not payroll deductions or approved overtime. */
+const DEFAULT_ATTENDANCE_SCHEDULE = Object.freeze({
+  start_time:'07:30', end_time:'13:45', thursday_end_time:'13:15', weekly_off:'friday'
+});
+function weekdayOf(dateText) {
+  const d = new Date(dateText+'T12:00:00Z');
+  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(dateText)||Number.isNaN(d.getTime())||d.toISOString().slice(0,10)!==dateText)
+    throw Object.assign(new Error('التاريخ غير صحيح'),{status:400});
+  return d.getUTCDay(); // 0 Sunday, 4 Thursday, 5 Friday
+}
+function minutesOf(hhmm){const a=String(hhmm).split(':').map(Number);return a[0]*60+a[1];}
+function attendanceDay(events,dateText,config){
+  const day=weekdayOf(dateText);
+  const off=day===5;
+  const start=config.start_time||DEFAULT_ATTENDANCE_SCHEDULE.start_time;
+  const end=day===4?(config.thursday_end_time||DEFAULT_ATTENDANCE_SCHEDULE.thursday_end_time):(config.end_time||DEFAULT_ATTENDANCE_SCHEDULE.end_time);
+  const ordered=events.filter(e=>e.timestamp.slice(0,10)===dateText).sort((a,b)=>a.timestamp.localeCompare(b.timestamp));
+  // Preserve explicit device/manual in/out; do not guess that the second unknown event is an exit.
+  const ins=ordered.filter(e=>e.kind==='in'),outs=ordered.filter(e=>e.kind==='out');
+  const firstIn=ins[0]?.timestamp||null;
+  const lastOut=outs.filter(e=>!firstIn||e.timestamp>firstIn).at(-1)?.timestamp||null;
+  const actual=firstIn&&lastOut?Math.max(0,Math.round((new Date(lastOut).getTime()-new Date(firstIn).getTime())/60000)):null;
+  const late=!off&&firstIn?Math.max(0,minutesOf(firstIn.slice(11,16))-minutesOf(start)):0;
+  const early=!off&&lastOut?Math.max(0,minutesOf(end)-minutesOf(lastOut.slice(11,16))):0;
+  const status=off?'weekly_off':!firstIn?'no_checkin':!lastOut?'missing_checkout':'completed';
+  return {date:dateText,weekly_off:off,scheduled_start:off?null:start,scheduled_end:off?null:end,
+    first_in:firstIn,last_out:lastOut,elapsed_minutes:actual,late_minutes:late,early_exit_minutes:early,status,
+    requires_review:!!(firstIn&&!lastOut)||!!(!firstIn&&outs.length),punch_count:ordered.length};
+}
+async function attendanceSummary(db,user,request){
+  const u=new URL(request.url),date=u.searchParams.get('date')||'';
+  weekdayOf(date);
+  const requested=str(u.searchParams.get('employee_id')||'',80);
+  let sql="SELECT p.employee_id,p.occurred_at AS timestamp,p.kind FROM punch_events p JOIN employees e ON e.id=p.employee_id WHERE p.organization_id=? AND p.occurred_at>=? AND p.occurred_at<?";
+  const args=[ORG,date+'T00:00',date+'T23:59:59.999'];
+  if(requested){sql+=' AND p.employee_id=?';args.push(requested);}
+  if(user.role==='viewer'){sql+=' AND p.employee_id=?';args.push(user.employee_id||'');}
+  if(user.role==='supervisor'){sql+=' AND e.department=?';args.push(user.department_scope||'');}
+  sql+=' ORDER BY p.occurred_at ASC LIMIT 10000';
+  const events=(await db.prepare(sql).bind(...args).all()).results||[];
+  const row=await db.prepare('SELECT data_json FROM organization_settings WHERE organization_id=?').bind(ORG).first();
+  const config={...DEFAULT_ATTENDANCE_SCHEDULE,...JSON.parse(row?.data_json||'{}')};
+  const ids=[...new Set(events.map(e=>e.employee_id))];
+  // For an explicitly requested employee include no-punch day, subject to the employee's access rights.
+  if(requested&&!ids.includes(requested)){
+    const employee=await db.prepare('SELECT * FROM employees WHERE id=? AND organization_id=?').bind(requested,ORG).first();
+    if(!allowedEmployee(user,employee))return reject(403,'هذا العامل ليس ضمن نطاق صلاحيتك');
+    ids.push(requested);
+  }
+  return response({date,items:ids.map(id=>({employee_id:id,...attendanceDay(events.filter(e=>e.employee_id===id),date,config)})),
+    schedule:{start_time:config.start_time,end_time:config.end_time,thursday_end_time:config.thursday_end_time,weekly_off:'friday'}});
+}
+
 export async function onRequest(context) {
   const {request,env} = context;
   const db=env.DB;
@@ -331,6 +386,7 @@ export async function onRequest(context) {
     if (path==='employees' && ['GET','POST'].includes(method)) return people(db,user,method,null,request);
     if (path.startsWith('employees/') && method==='PUT') return people(db,user,method,path.slice('employees/'.length),request);
     if (path==='punches' && ['GET','POST'].includes(method)) return punches(db,user,method,request);
+    if (path==='attendance-summary' && method==='GET') return attendanceSummary(db,user,request);
     if (path==='settings' && ['GET','PUT'].includes(method)) return settings(db,user,method,request);
     if (user.role!=='admin') return reject(403,'ليس لديك صلاحية');
     if (path==='users' && method==='GET'){

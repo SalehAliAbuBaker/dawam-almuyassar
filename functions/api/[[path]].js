@@ -128,7 +128,7 @@ async function initialSetup(db, env, request) {
   if (!env.SETUP_TOKEN || env.SETUP_TOKEN.length < 24) return reject(503, 'إعداد سر التأسيس مطلوب في بيئة Cloudflare');
   if (!(await setupRequired(db))) return reject(409, 'تم إعداد المدير سابقًا');
   const body = await bodyJson(request);
-  if (!safeEquals(body.setupToken, env.SETUP_TOKEN)) return reject(403, 'رمز التأسيس غير صالح');
+  if (!safeEquals(body.setupToken || body.token, env.SETUP_TOKEN)) return reject(403, 'رمز التأسيس غير صالح');
   const email = emailVal(body.email), password = body.password, name = str(body.name || 'مدير النظام', 120);
   if (!validEmail(email) || !validPassword(password)) return reject(400, 'أدخل بريدًا صحيحًا وكلمة مرور لا تقل عن 12 حرفًا');
   const salt = randomB64(18), hash = await passwordHash(password, salt), uid = uuid();
@@ -149,12 +149,13 @@ async function login(db, request) {
   if (!validEmail(email) || password.length > 128) return reject(401, 'بيانات الدخول غير صحيحة');
   const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
   const bucket = await hashText('login|' + email + '|' + ip);
-  const attempt = await db.prepare('SELECT attempts,locked_until FROM login_attempts WHERE bucket=?').bind(bucket).first();
+  const attempt = await db.prepare('SELECT attempts,locked_until,updated_at FROM login_attempts WHERE bucket=?').bind(bucket).first();
   if (attempt?.locked_until && attempt.locked_until > iso()) return reject(429,'محاولات كثيرة؛ أعد المحاولة بعد مدة');
   const user = await db.prepare('SELECT * FROM users WHERE email=? AND organization_id=? AND is_active=1').bind(email,ORG).first();
   const ok = user ? safeEquals(await passwordHash(password,user.password_salt,user.password_iterations),user.password_hash) : false;
   if (!ok) {
-    const n = attempt?.updated_at && false ? 1 : (attempt?.attempts || 0)+1;
+    const stale = !attempt?.updated_at || Date.now()-Date.parse(attempt.updated_at)>15*60000;
+    const n = stale ? 1 : (attempt?.attempts || 0)+1;
     const expires = n >= 5 ? new Date(Date.now()+15*60000).toISOString() : null;
     await db.prepare('INSERT INTO login_attempts(bucket,attempts,locked_until,updated_at) VALUES (?,?,?,?) ON CONFLICT(bucket) DO UPDATE SET attempts=excluded.attempts,locked_until=excluded.locked_until,updated_at=excluded.updated_at')
       .bind(bucket,n,expires,iso()).run();
@@ -215,7 +216,7 @@ async function changePassword(db,user,request) {
     .bind(hash,salt,PBKDF2_ROUNDS,user.id).run();
   await db.prepare('DELETE FROM sessions WHERE user_id=?').bind(user.id).run();
   await audit(db,user,'auth.password_changed','user',user.id);
-  return response({ok:true,reauth_required:true},{valueOf:()=>200}.valueOf(),{ 'set-cookie':setCookie('',0) });
+  return response({ok:true,reauth_required:true},200,{ 'set-cookie':setCookie('',0) });
 }
 function employeePayload(b, current={}) {
   const candidate={...current,...b};

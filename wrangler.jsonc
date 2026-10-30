@@ -1,0 +1,16 @@
+{
+  // Staging only. Do not use for Ratib, Ataya or the production Dawam application.
+  // The DB UUID is an identifier, not an authentication token.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dawam-muyassar-stage",
+  "compatibility_date": "2026-10-29",
+  "pages_build_output_dir": ".",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "dawam-muyassar-stage-db",
+      "database_id": "f64a4295-7ead-48ee-a1da-c39cd3c84555",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

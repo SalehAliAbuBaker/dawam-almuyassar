@@ -290,6 +290,32 @@ async function punches(db,user,method,request){
   await audit(db,user,'punch.manual_created','punch',id,{employee_id:employee.id});
   return response({item:{id,employee_id:employee.id,timestamp,kind,source:'manual'}},201);
 }
+
+/* Allow auditable corrections only for manual punch rows. */
+async function correctManualPunch(db,user,id,request){
+  if(!canEditPeople(user))return reject(403,'تعديل البصمات اليدوية للمدير وشؤون العاملين فقط');
+  const prior=await db.prepare("SELECT id,employee_id,occurred_at,kind,source FROM punch_events WHERE id=? AND organization_id=?").bind(id,ORG).first();
+  if(!prior)return reject(404,'البصمة غير موجودة');
+  if(prior.source!=='manual')return reject(403,'لا يمكن تعديل بصمات الجهاز من هذه الشاشة');
+  const b=await bodyJson(request),reason=str(b.reason,500),original=b.original;
+  if(reason.length<5)return reject(400,'اكتب سبب التصحيح بخمسة أحرف على الأقل');
+  if(!original||typeof original!=='object'||original.employee_id!==prior.employee_id||original.timestamp!==prior.occurred_at||original.kind!==prior.kind)
+    return reject(409,'تغيرت الحركة؛ حدّث القائمة وحاول مجددًا');
+  const timestamp=str(b.timestamp,35),kind=str(b.kind,10),employeeId=str(b.employee_id,80);
+  if(!/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(timestamp)||!KINDS.has(kind))
+    return reject(400,'التاريخ أو نوع الحركة غير صالح');
+  const parsed=timestamp.length===16?timestamp+':00':timestamp;
+  const date=new Date(parsed+'Z');
+  if(Number.isNaN(date.getTime())||date.toISOString().slice(0,19)!==parsed)return reject(400,'التاريخ غير صحيح');
+  const employee=await db.prepare('SELECT * FROM employees WHERE id=? AND organization_id=?').bind(employeeId,ORG).first();
+  if(!employee)return reject(404,'العامل غير موجود');
+  if(prior.employee_id===employeeId&&prior.occurred_at===timestamp&&prior.kind===kind)return reject(400,'لم يتم تعديل أي بيانات');
+  const update=await db.prepare("UPDATE punch_events SET employee_id=?,occurred_at=?,kind=? WHERE id=? AND organization_id=? AND source='manual' AND employee_id=? AND occurred_at=? AND kind=?")
+    .bind(employeeId,timestamp,kind,id,ORG,prior.employee_id,prior.occurred_at,prior.kind).run();
+  if(update.meta?.changes!==1)return reject(409,'تغير السجل أثناء التعديل؛ لم يتم حفظ التصحيح');
+  await audit(db,user,'punch.manual_corrected','punch',id,{before:{employee_id:prior.employee_id,timestamp:prior.occurred_at,kind:prior.kind},after:{employee_id:employeeId,timestamp,kind},reason});
+  return response({corrected:true,item:{id,employee_id:employeeId,timestamp,kind,source:'manual'}});
+}
 async function settings(db,user,method,request){
   if (method==='GET'){
     const row=await db.prepare('SELECT data_json FROM organization_settings WHERE organization_id=?').bind(ORG).first();
@@ -439,7 +465,7 @@ export async function onRequest(context) {
     if (site && !['same-origin','none'].includes(site)) return reject(403,'طلب من موقع آخر');
   }
   try {
-    if (path==='status' && method==='GET') return response({setupRequired:await setupRequired(db),version:'0.2.0-foundation'});
+    if (path==='status' && method==='GET') return response({setupRequired:await setupRequired(db),version:'0.2.7'});
     if (path==='setup' && method==='POST') return initialSetup(db,env,request);
     if (path==='login' && method==='POST') return login(db,request);
     const user=await sessionUser(db,request);
@@ -451,6 +477,7 @@ export async function onRequest(context) {
     if (path==='employees' && ['GET','POST'].includes(method)) return people(db,user,method,null,request);
     if (path.startsWith('employees/') && method==='PUT') return people(db,user,method,path.slice('employees/'.length),request);
     if (path==='punches' && ['GET','POST'].includes(method)) return punches(db,user,method,request);
+    if (path.startsWith('punches/') && method==='PUT') return correctManualPunch(db,user,path.slice('punches/'.length),request);
     if (path==='attendance-summary' && method==='GET') return attendanceSummary(db,user,request);
     if (path==='settings' && ['GET','PUT'].includes(method)) return settings(db,user,method,request);
     if (user.role!=='admin') return reject(403,'ليس لديك صلاحية');

@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS users (
   department_scope TEXT,
   password_hash TEXT NOT NULL,
   password_salt TEXT NOT NULL,
-  password_iterations INTEGER NOT NULL CHECK(password_iterations >= 210000),
+  password_iterations INTEGER NOT NULL CHECK(password_iterations >= 100000),
   must_change_password INTEGER NOT NULL DEFAULT 1 CHECK(must_change_password IN (0,1)),
   is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),

@@ -4,7 +4,9 @@
 const COOKIE = 'dawam_session';
 const ORG = 'org_main';
 const SESSION_HOURS = 12;
-const PBKDF2_ROUNDS = 240000;
+// Cloudflare Workers WebCrypto rejects PBKDF2 iteration counts above 100,000.
+// Keep the stored iteration count accurate and consistent with the D1 CHECK constraint.
+const PBKDF2_ROUNDS = 100000;
 const ROLES = new Set(['admin', 'hr', 'accountant', 'supervisor', 'viewer']);
 const KINDS = new Set(['in', 'out', 'other']);
 const USER_PUBLIC = 'id, organization_id, employee_id, name, email, role, department_scope, must_change_password, is_active, created_at';

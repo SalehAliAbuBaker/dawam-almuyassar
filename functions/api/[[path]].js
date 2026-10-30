@@ -319,48 +319,113 @@ function weekdayOf(dateText) {
   return d.getUTCDay(); // 0 Sunday, 4 Thursday, 5 Friday
 }
 function minutesOf(hhmm){const a=String(hhmm).split(':').map(Number);return a[0]*60+a[1];}
-function attendanceDay(events,dateText,config){
-  const day=weekdayOf(dateText);
-  const off=day===5;
-  const start=config.start_time||DEFAULT_ATTENDANCE_SCHEDULE.start_time;
-  const end=day===4?(config.thursday_end_time||DEFAULT_ATTENDANCE_SCHEDULE.thursday_end_time):(config.end_time||DEFAULT_ATTENDANCE_SCHEDULE.end_time);
-  const ordered=events.filter(e=>e.timestamp.slice(0,10)===dateText).sort((a,b)=>a.timestamp.localeCompare(b.timestamp));
-  // Preserve explicit device/manual in/out; do not guess that the second unknown event is an exit.
-  const ins=ordered.filter(e=>e.kind==='in'),outs=ordered.filter(e=>e.kind==='out');
-  const firstIn=ins[0]?.timestamp||null;
-  const lastOut=outs.filter(e=>!firstIn||e.timestamp>firstIn).at(-1)?.timestamp||null;
-  const actual=firstIn&&lastOut?Math.max(0,Math.round((new Date(lastOut).getTime()-new Date(firstIn).getTime())/60000)):null;
-  const late=!off&&firstIn?Math.max(0,minutesOf(firstIn.slice(11,16))-minutesOf(start)):0;
-  const early=!off&&lastOut?Math.max(0,minutesOf(end)-minutesOf(lastOut.slice(11,16))):0;
-  const status=off?'weekly_off':!firstIn?'no_checkin':!lastOut?'missing_checkout':'completed';
-  return {date:dateText,weekly_off:off,scheduled_start:off?null:start,scheduled_end:off?null:end,
-    first_in:firstIn,last_out:lastOut,elapsed_minutes:actual,late_minutes:late,early_exit_minutes:early,status,
-    requires_review:!!(firstIn&&!lastOut)||!!(!firstIn&&outs.length),punch_count:ordered.length};
+function punchSeconds(s){const m=/^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/.exec(String(s));return m?Number(m[1])*3600+Number(m[2])*60+Number(m[3]||0):null}
+
+function clippedSeconds(a,b,x,y){return Math.max(0,Math.min(b,y)-Math.max(a,x))}
+
+function moneyRound(n){return Math.round((n+Number.EPSILON)*100)/100}
+
+function attendanceDay(events,dateText,config,employee=null,canSeeFinancial=false){
+ const weekday=weekdayOf(dateText),off=weekday===5;
+ const start=config.start_time||DEFAULT_ATTENDANCE_SCHEDULE.start_time;
+ const end=weekday===4?(config.thursday_end_time||DEFAULT_ATTENDANCE_SCHEDULE.thursday_end_time):(config.end_time||DEFAULT_ATTENDANCE_SCHEDULE.end_time);
+ const startSecond=punchSeconds(dateText+'T'+start),endSecond=punchSeconds(dateText+'T'+end);
+ if(startSecond===null||endSecond===null||endSecond<=startSecond)throw Object.assign(new Error('ساعات الدوام في الإعدادات غير صالحة'),{status:400});
+ const ordered=events.filter(e=>e.timestamp.slice(0,10)===dateText).sort((a,b)=>a.timestamp.localeCompare(b.timestamp));
+ let firstIn=null,firstSecond=null,activeIn=null,lastOut=null,workSeconds=0,dutySeconds=0,absenceSeconds=0;
+ const absencePeriods=[],issues=[];
+ for(const event of ordered){
+   const second=punchSeconds(event.timestamp);
+   if(second===null){issues.push('invalid_timestamp');continue}
+   if(event.kind==='in'){
+     if(activeIn!==null){
+       if(second-activeIn.second>120)issues.push('unmatched_extra_checkin');
+       continue
+     }
+     if(lastOut!==null){
+       const gap=second-lastOut.second;
+       if(gap<0){issues.push('out_of_order_return');continue}
+       const overlap=clippedSeconds(lastOut.second,second,startSecond,endSecond);
+       absenceSeconds+=overlap;
+       absencePeriods.push({out_at:lastOut.timestamp,return_at:event.timestamp,duration_minutes:Math.round(gap/60),during_duty_minutes:off?0:Math.round(overlap/60)});
+       if(gap<=120)issues.push('rapid_exit_and_return');
+       lastOut=null;
+     }else if(firstIn===null){firstIn=event.timestamp;firstSecond=second}
+     activeIn={timestamp:event.timestamp,second};
+   }else if(event.kind==='out'){
+     if(activeIn!==null){
+       if(second<activeIn.second){issues.push('checkout_before_checkin');continue}
+       workSeconds+=second-activeIn.second;
+       dutySeconds+=clippedSeconds(activeIn.second,second,startSecond,endSecond);
+       activeIn=null;lastOut={timestamp:event.timestamp,second};
+     }else if(lastOut!==null){
+       if(second-lastOut.second>120)issues.push('unmatched_extra_checkout');
+     }else issues.push('checkout_without_checkin');
+   }else issues.push('unknown_punch_kind');
+ }
+ const finalOut=lastOut?.timestamp||null;
+ const span=firstIn&&finalOut?Math.round((lastOut.second-firstSecond)/60):null;
+ const late=off||firstIn===null?0:Math.max(0,Math.round((Math.min(firstSecond,endSecond)-startSecond)/60));
+ const early=off||finalOut===null?0:Math.max(0,Math.round((endSecond-Math.max(lastOut.second,startSecond))/60));
+ const absence=off?0:Math.round(absenceSeconds/60);
+ const status=off?'weekly_off':!firstIn?'no_checkin':activeIn?'missing_checkout':'completed';
+ const requiresReview=issues.length>0||(!off&&status!=='completed');
+ const totalMinutes=off?0:late+absence+early;
+ const result={date:dateText,weekly_off:off,scheduled_start:off?null:start,scheduled_end:off?null:end,
+   first_in:firstIn,last_out:finalOut,span_minutes:span,elapsed_minutes:Math.round(workSeconds/60),
+   worked_minutes:Math.round(workSeconds/60),worked_during_duty_minutes:Math.round(dutySeconds/60),
+   late_minutes:late,absence_minutes:absence,absence_periods:absencePeriods,early_exit_minutes:early,
+   total_deductible_minutes:totalMinutes,status,requires_review:requiresReview,review_issues:issues,punch_count:ordered.length};
+ // Read-only preliminary calculation. No payroll changes or approval action.
+ if(canSeeFinancial){
+   let preview=null;
+   if(!requiresReview&&employee){
+     const divisor=Number(config.monthly_divisor||30)*Number(config.daily_minutes||375);
+     const monthly=Number(employee.basic_salary||0)+Number(employee.transport_allowance||0);
+     if(divisor>0&&Number.isFinite(monthly)){
+       const rate=monthly/divisor;
+       const lateMoney=moneyRound(rate*late),absenceMoney=moneyRound(rate*absence),earlyMoney=moneyRound(rate*early);
+       const threshold=punchSeconds(dateText+'T'+(config.incentive_threshold||'08:00'));
+       const bonusRate=Number(config.incentive_penalty_percent??50)/100;
+       const incentive=off||firstSecond===null||threshold===null||firstSecond<=threshold?0:moneyRound(Number(employee.daily_incentive||0)*bonusRate);
+       preview={late_deduction:lateMoney,intermediate_absence_deduction:absenceMoney,early_exit_deduction:earlyMoney,
+         base_and_transport_deduction:moneyRound(lateMoney+absenceMoney+earlyMoney),
+         incentive_deduction:incentive,total_deduction_estimate:moneyRound(lateMoney+absenceMoney+earlyMoney+incentive),
+         currency:config.currency||'YER',draft:true,approved:false};
+     }
+   }
+   result.deduction_preview=preview;
+ }
+ return result;
 }
+
 async function attendanceSummary(db,user,request){
   const u=new URL(request.url),date=u.searchParams.get('date')||'';
   weekdayOf(date);
   const requested=str(u.searchParams.get('employee_id')||'',80);
-  let sql="SELECT p.employee_id,p.occurred_at AS timestamp,p.kind FROM punch_events p JOIN employees e ON e.id=p.employee_id WHERE p.organization_id=? AND p.occurred_at>=? AND p.occurred_at<?";
+  let sql="SELECT p.employee_id,p.occurred_at AS timestamp,p.kind,e.basic_salary,e.transport_allowance,e.daily_incentive FROM punch_events p JOIN employees e ON e.id=p.employee_id WHERE p.organization_id=? AND p.occurred_at>=? AND p.occurred_at<?";
   const args=[ORG,date+'T00:00',date+'T23:59:59.999'];
   if(requested){sql+=' AND p.employee_id=?';args.push(requested);}
   if(user.role==='viewer'){sql+=' AND p.employee_id=?';args.push(user.employee_id||'');}
   if(user.role==='supervisor'){sql+=' AND e.department=?';args.push(user.department_scope||'');}
-  sql+=' ORDER BY p.occurred_at ASC LIMIT 10000';
+  sql+=' ORDER BY p.occurred_at ASC LIMIT 10001';
   const events=(await db.prepare(sql).bind(...args).all()).results||[];
+  if(events.length>10000)return reject(409,'عدد الحركات كبير؛ يلزم تضييق نطاق الاستعلام');
   const row=await db.prepare('SELECT data_json FROM organization_settings WHERE organization_id=?').bind(ORG).first();
   const config={...DEFAULT_ATTENDANCE_SCHEDULE,...JSON.parse(row?.data_json||'{}')};
+  const employeeRows=new Map(events.map(e=>[e.employee_id,e]));
   const ids=[...new Set(events.map(e=>e.employee_id))];
-  // For an explicitly requested employee include no-punch day, subject to the employee's access rights.
   if(requested&&!ids.includes(requested)){
     const employee=await db.prepare('SELECT * FROM employees WHERE id=? AND organization_id=?').bind(requested,ORG).first();
     if(!allowedEmployee(user,employee))return reject(403,'هذا العامل ليس ضمن نطاق صلاحيتك');
-    ids.push(requested);
+    ids.push(requested);employeeRows.set(requested,employee);
   }
-  return response({date,items:ids.map(id=>({employee_id:id,...attendanceDay(events.filter(e=>e.employee_id===id),date,config)})),
-    schedule:{start_time:config.start_time,end_time:config.end_time,thursday_end_time:config.thursday_end_time,weekly_off:'friday'}});
+  const showFinancial=canReadAll(user);
+  return response({date,items:ids.map(id=>({employee_id:id,
+    ...attendanceDay(events.filter(e=>e.employee_id===id),date,config,employeeRows.get(id),showFinancial)})),
+    schedule:{start_time:config.start_time,end_time:config.end_time,thursday_end_time:config.thursday_end_time,weekly_off:'friday'},
+    financial_mode:'draft_preview_only'});
 }
-
 export async function onRequest(context) {
   const {request,env} = context;
   const db=env.DB;

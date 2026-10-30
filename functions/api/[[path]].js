@@ -116,6 +116,15 @@ function settingsWhitelist(input) {
   }
   if (result.currency && !['YER','SAR'].includes(result.currency)) throw Object.assign(new Error('العملة غير مدعومة'), { status: 400 });
   if (result.org_name && str(result.org_name,160).length < 2) throw Object.assign(new Error('اسم جهة غير صالح'), { status: 400 });
+  const ranges = {grace_minutes:[0,180],permission_minutes:[0,10000],annual_leave_days:[0,365],monthly_divisor:[1,31],daily_minutes:[1,1440],cycle_start_day:[1,31],cycle_end_day:[1,31],payday:[1,31],incentive_penalty_percent:[0,100]};
+  for (const [key,[min,max]] of Object.entries(ranges)) if (Object.prototype.hasOwnProperty.call(result,key)) {
+    const value=Number(result[key]);
+    if (!Number.isFinite(value)||value<min||value>max) throw Object.assign(new Error('قيمة خارج النطاق: '+key),{status:400});
+    result[key]=value;
+  }
+  for (const key of ['start_time','end_time','incentive_threshold']) if (result[key]!==undefined && !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(result[key]))) {
+    throw Object.assign(new Error('الوقت غير صحيح: '+key),{status:400});
+  }
   // Stage 1 has no validated legal payroll rules; financial deductions stay disabled.
   result.deductions_enabled = false;
   return result;

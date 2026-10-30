@@ -314,7 +314,7 @@ const DEFAULT_ATTENDANCE_SCHEDULE = Object.freeze({
 });
 function weekdayOf(dateText) {
   const d = new Date(dateText+'T12:00:00Z');
-  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(dateText)||Number.isNaN(d.getTime())||d.toISOString().slice(0,10)!==dateText)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateText)||Number.isNaN(d.getTime())||d.toISOString().slice(0,10)!==dateText)
     throw Object.assign(new Error('التاريخ غير صحيح'),{status:400});
   return d.getUTCDay(); // 0 Sunday, 4 Thursday, 5 Friday
 }

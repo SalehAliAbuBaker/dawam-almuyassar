@@ -1,0 +1,15 @@
+{
+  // TEMPLATE ONLY: copy to wrangler.jsonc LOCALLY after creating a STAGING database.
+  // Do not bind to any existing production D1 database.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dawam-muyassar-stage",
+  "compatibility_date": "2026-10-29",
+  "pages_build_output_dir": ".",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "dawam-muyassar-stage-db",
+      "database_id": "REPLACE_WITH_NEW_STAGING_D1_UUID"
+    }
+  ]
+}

@@ -44,8 +44,16 @@
     const rect=el.getBoundingClientRect();
     return rect.width>0 && rect.height>0;
   }
+  function hasNativePermissionsLink(){
+    for(const el of document.querySelectorAll('a,button,[role="button"]')){
+      const value=displayText(el);
+      if((el.getAttribute('href')||'').includes('users-permissions.html') ||
+         (value.includes('تعديل الصلاحيات')&&value.length<100))return true;
+    }
+    return false;
+  }
   function mount() {
-    if (!isAdmin || mounting || document.querySelector('.dawam-permissions-entry')) return;
+    if (!isAdmin || mounting || document.querySelector('.dawam-permissions-entry') || hasNativePermissionsLink()) return;
     mounting=true;
     try {
       // Prefer placing the link beside the existing Settings navigation control.

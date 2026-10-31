@@ -639,6 +639,7 @@ function classifyDayMovements(items,sch){
  const groups=new Map();
  for(const item of items){
    item.movement_type='review';item.permission_minutes=0;
+   item.review_reason=!item.employee_id?'رقم البصمة غير مربوط بعامل':!['in','out'].includes(item.kind)?'رمز حركة غير معروف من الجهاز':null;
    if(!item.employee_id)continue;
    const time=item.effective_timestamp||item.timestamp||item.occurred_at_device;
    const key=item.employee_id+'|'+String(time).slice(0,10);
@@ -654,6 +655,7 @@ function classifyDayMovements(items,sch){
      const exit=weekdayOf(date)!==5&&x.kind==='out'&&p?.kind==='in'&&n?.kind==='in'&&during(x._time)&&n._time>x._time;
      const back=weekdayOf(date)!==5&&x.kind==='in'&&p?.kind==='out'&&pp?.kind==='in'&&during(p._time)&&x._time>p._time;
      x._original.movement_type=exit?'permission_exit':back?'permission_return':x.kind==='in'&&!p?'attendance':x.kind==='out'&&p?.kind==='in'?'departure':'review';
+     if(x._original.movement_type==='review')x._original.review_reason=x.kind==='in'&&p?.kind==='in'?'دخول مكرر دون خروج مسجل':x.kind==='out'&&p?.kind==='out'?'خروج مكرر دون عودة مسجلة':x.kind==='out'&&!p?'خروج دون حضور سابق':x.kind==='in'&&p?.kind==='out'?'عودة تحتاج إلى تأكيد تسلسل الحركات':x._original.review_reason||'تسلسل الحركة غير مكتمل';
      if(back)x._original.permission_minutes=durationDuringShift(p._time,x._time,date,sch);
    }
  }
@@ -697,7 +699,7 @@ async function attendanceRegister(db,user,request){
  const close="(CASE WHEN strftime('%w',substr(z.timestamp,1,10))='4' THEN '"+sch.thursday+"' ELSE '"+sch.end+"' END)";
  const exit="z.kind='out' AND z.previous_kind='in' AND z.next_kind='in' AND substr(z.timestamp,12,5)>='"+sch.start+"' AND substr(z.timestamp,12,5)<"+close+" AND z.next_timestamp>z.timestamp";
  const back="z.kind='in' AND z.previous_kind='out' AND z.second_previous_kind='in' AND substr(z.previous_timestamp,12,5)>='"+sch.start+"' AND substr(z.previous_timestamp,12,5)<"+close+" AND z.timestamp>z.previous_timestamp";
- const classified="SELECT z.*,CASE WHEN z.employee_id IS NULL OR z.kind NOT IN ('in','out') THEN 'review' "+
+ const classified="SELECT z.*,CASE WHEN z.employee_id IS NULL THEN 'رقم البصمة غير مربوط بعامل' WHEN z.kind NOT IN ('in','out') THEN 'رمز حركة غير معروف من الجهاز' WHEN z.kind='in' AND z.previous_kind='in' THEN 'دخول مكرر دون خروج مسجل' WHEN z.kind='out' AND z.previous_kind='out' THEN 'خروج مكرر دون عودة مسجلة' WHEN z.kind='out' AND z.previous_kind IS NULL THEN 'خروج دون حضور سابق' ELSE 'تسلسل الحركة غير مكتمل' END AS review_reason,CASE WHEN z.employee_id IS NULL OR z.kind NOT IN ('in','out') THEN 'review' "+
    "WHEN strftime('%w',substr(z.timestamp,1,10))!='5' AND ("+exit+") THEN 'permission_exit' "+
    "WHEN strftime('%w',substr(z.timestamp,1,10))!='5' AND ("+back+") THEN 'permission_return' "+
    "WHEN z.kind='in' AND z.previous_kind IS NULL THEN 'attendance' "+
@@ -722,7 +724,7 @@ async function attendanceRegister(db,user,request){
  }
  const base='FROM ('+classified+') q'+(filters.length?' WHERE '+filters.join(' AND '):'');
  const countRow=await db.prepare('SELECT COUNT(*) AS n '+base).bind(...args).first();
- const rows=await db.prepare('SELECT q.id,q.employee_id,q.employee_name,q.employee_code,q.timestamp,q.kind,q.source,q.device_user_id,q.device_event_id,q.corrected,q.movement_type,q.previous_timestamp '+base+
+ const rows=await db.prepare('SELECT q.id,q.employee_id,q.employee_name,q.employee_code,q.timestamp,q.kind,q.source,q.device_user_id,q.device_event_id,q.corrected,q.movement_type,q.previous_timestamp,q.review_reason '+base+
    ' ORDER BY q.timestamp DESC,q.id DESC LIMIT ? OFFSET ?').bind(...args,pageSize,(page-1)*pageSize).all();
  const items=(rows.results||[]).map(r=>({...r,permission_minutes:r.movement_type==='permission_return'&&r.previous_timestamp?durationDuringShift(r.previous_timestamp,r.timestamp,r.timestamp.slice(0,10),sch):0}));
  return response({items,total:Number(countRow?.n||0),page,page_size:pageSize,
@@ -761,7 +763,7 @@ async function deviceAttendance(db,user,request){
   classifyDayMovements(result,safeSchedule(cfg));
   return response({date,items:result,matched_count:result.filter(r=>r.matched).length,
     unmatched_count:result.filter(r=>!r.matched).length,
-    review_count:result.filter(r=>r.requires_review).length,
+    review_count:result.filter(r=>r.requires_review||r.movement_type==='review').length,
     time_authority:'device',timezone:'Asia/Aden',
     read_only:true,posted_to_attendance:false,payroll_changed:false});
 }

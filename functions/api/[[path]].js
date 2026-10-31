@@ -71,7 +71,7 @@ function setCookie(token, maxAge) {
   return COOKIE + '=' + token + '; Path=/api; HttpOnly; Secure; SameSite=Strict; Max-Age=' + maxAge;
 }
 function publicUser(user) {
-  return Object.fromEntries(USER_PUBLIC.split(', ').map(k => [k, user[k]]));
+  return {...Object.fromEntries(USER_PUBLIC.split(', ').map(k => [k, user[k]])),self_only:!!user.self_only};
 }
 async function allowedByPermission(db,user,key,defaultAllowed) {
   if(user.role==='admin') return true;
@@ -80,11 +80,12 @@ async function allowedByPermission(db,user,key,defaultAllowed) {
   if(!row) return defaultAllowed;
   return row.allowed===1;
 }
-function canEditPeople(user) { return user.role === 'admin' || user.role === 'hr'; }
-function canReadAll(user) { return ['admin', 'hr', 'accountant'].includes(user.role); }
-function canWritePunch(user) { return canEditPeople(user) || user.role === 'supervisor'; }
+function canEditPeople(user) { return !user.self_only && (user.role === 'admin' || user.role === 'hr'); }
+function canReadAll(user) { return !user.self_only && ['admin', 'hr', 'accountant'].includes(user.role); }
+function canWritePunch(user) { return !user.self_only && (canEditPeople(user) || user.role === 'supervisor'); }
 function allowedEmployee(user, employee) {
   if (!employee) return false;
+  if(user.self_only) return !!user.employee_id && employee.id === user.employee_id;
   if (canReadAll(user)) return true;
   if (user.role === 'supervisor') return !!user.department_scope && employee.department === user.department_scope;
   return user.role === 'viewer' && !!user.employee_id && employee.id === user.employee_id;
@@ -104,7 +105,13 @@ async function sessionUser(db, request) {
   const h = await hashText(raw);
   const user = await db.prepare('SELECT u.*,s.token_hash FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>? AND u.is_active=1')
     .bind(h, iso()).first();
-  return user || null;
+  if(!user) return null;
+  let selfOnly=user.role==='viewer';
+  if(user.role!=='admin' && !selfOnly){
+    const row=await db.prepare("SELECT allowed FROM user_permission_overrides WHERE organization_id=? AND user_id=? AND permission_key='data.self_only'").bind(user.organization_id,user.id).first();
+    selfOnly=row?.allowed===1;
+  }
+  return {...user,self_only:selfOnly};
 }
 async function issueSession(db, user) {
   const raw = randomB64();
@@ -254,7 +261,7 @@ function employeePayload(b, current={}) {
 async function people(db,user,method,id,request){
   if (method==='GET' && !id){
     let sql='SELECT * FROM employees WHERE organization_id=?',params=[ORG];
-    if (user.role==='viewer') {sql+=' AND id=?';params.push(user.employee_id||'');}
+    if (user.self_only) {sql+=' AND id=?';params.push(user.employee_id||'');}
     else if (user.role==='supervisor') {sql+=' AND department=?';params.push(user.department_scope||'');}
     sql+=' ORDER BY name LIMIT 2000';
     const rows=await db.prepare(sql).bind(...params).all();
@@ -281,7 +288,7 @@ async function people(db,user,method,id,request){
 async function punches(db,user,method,request){
   if (method==='GET'){
     let sql='SELECT p.id,p.employee_id,p.occurred_at AS timestamp,p.kind,p.source,p.created_at FROM punch_events p JOIN employees e ON e.id=p.employee_id WHERE p.organization_id=?',args=[ORG];
-    if (user.role==='viewer'){sql+=' AND p.employee_id=?';args.push(user.employee_id||'');}
+    if (user.self_only){sql+=' AND p.employee_id=?';args.push(user.employee_id||'');}
     if (user.role==='supervisor'){sql+=' AND e.department=?';args.push(user.department_scope||'');}
     sql+=' ORDER BY p.occurred_at DESC LIMIT 2000';
     const rows=await db.prepare(sql).bind(...args).all();
@@ -289,7 +296,7 @@ async function punches(db,user,method,request){
     // device events alongside manual entries without copying or double-posting data.
     let deviceSql="SELECT r.event_fingerprint,r.occurred_at_device AS timestamp,r.punch_code,e.id AS employee_id FROM device_raw_punches r JOIN employees e ON e.organization_id=r.organization_id AND e.device_user_id=r.device_user_id WHERE r.organization_id=? AND r.device_id='mb10-main' AND r.punch_code IN (0,1) AND NOT EXISTS (SELECT 1 FROM punch_events p WHERE p.organization_id=r.organization_id AND p.device_id=r.device_id AND p.device_event_id=r.event_fingerprint)";
     const deviceArgs=[ORG];
-    if(user.role==='viewer'){deviceSql+=' AND e.id=?';deviceArgs.push(user.employee_id||'');}
+    if(user.self_only){deviceSql+=' AND e.id=?';deviceArgs.push(user.employee_id||'');}
     if(user.role==='supervisor'){deviceSql+=' AND e.department=?';deviceArgs.push(user.department_scope||'');}
     deviceSql+=' ORDER BY r.occurred_at_device DESC LIMIT 2000';
     const deviceRows=(await db.prepare(deviceSql).bind(...deviceArgs).all()).results||[];
@@ -415,7 +422,7 @@ async function correctDevicePunch(db,user,request){
 }
 
 async function manualPunchCleanup(db,user,method,request){
-  if(user.role!=='admin')return reject(403,'هذه العملية لمدير النظام فقط');
+  if(user.self_only||user.role!=='admin')return reject(403,'هذه العملية لمدير النظام فقط');
   const u=new URL(request.url);
   const body=method==='POST'?await bodyJson(request):null;
   const date=str(method==='POST'?body?.date:u.searchParams.get('date'),10);
@@ -452,7 +459,8 @@ async function manualPunchCleanup(db,user,method,request){
 async function settings(db,user,method,request){
   if (method==='GET'){
     const row=await db.prepare('SELECT data_json FROM organization_settings WHERE organization_id=?').bind(ORG).first();
-    return response({settings:JSON.parse(row?.data_json||'{}')});
+    const cfg=JSON.parse(row?.data_json||'{}');
+    return response({settings:user.self_only?Object.fromEntries(['start_time','end_time','thursday_end_time','weekly_off','work_days'].filter(k=>cfg[k]!==undefined).map(k=>[k,cfg[k]])):cfg});
   }
   if (method!=='PUT'||user.role!=='admin') return reject(403,'الإعدادات للمدير فقط');
   const b=await bodyJson(request);
@@ -566,7 +574,7 @@ async function attendanceSummary(db,user,request){
   let sql="SELECT p.employee_id,p.occurred_at AS timestamp,p.kind,e.basic_salary,e.transport_allowance,e.daily_incentive FROM punch_events p JOIN employees e ON e.id=p.employee_id WHERE p.organization_id=? AND p.occurred_at>=? AND p.occurred_at<?";
   const args=[ORG,date+'T00:00',date+'T23:59:59.999'];
   if(requested){sql+=' AND p.employee_id=?';args.push(requested);}
-  if(user.role==='viewer'){sql+=' AND p.employee_id=?';args.push(user.employee_id||'');}
+  if(user.self_only){sql+=' AND p.employee_id=?';args.push(user.employee_id||'');}
   if(user.role==='supervisor'){sql+=' AND e.department=?';args.push(user.department_scope||'');}
   sql+=' ORDER BY p.occurred_at ASC LIMIT 10001';
   const manualEvents=(await db.prepare(sql).bind(...args).all()).results||[];
@@ -574,7 +582,7 @@ async function attendanceSummary(db,user,request){
   let deviceSql="SELECT e.id AS employee_id,r.occurred_at_device AS timestamp,r.punch_code,e.basic_salary,e.transport_allowance,e.daily_incentive FROM device_raw_punches r JOIN employees e ON e.organization_id=r.organization_id AND e.device_user_id=r.device_user_id WHERE r.organization_id=? AND r.device_id='mb10-main' AND r.occurred_at_device>=? AND r.occurred_at_device<? AND r.punch_code IN (0,1) AND NOT EXISTS (SELECT 1 FROM punch_events p WHERE p.organization_id=r.organization_id AND p.device_id=r.device_id AND p.device_event_id=r.event_fingerprint)";
   const deviceArgs=[ORG,date+'T00:00',date+'T23:59:59.999'];
   if(requested){deviceSql+=' AND e.id=?';deviceArgs.push(requested);}
-  if(user.role==='viewer'){deviceSql+=' AND e.id=?';deviceArgs.push(user.employee_id||'');}
+  if(user.self_only){deviceSql+=' AND e.id=?';deviceArgs.push(user.employee_id||'');}
   if(user.role==='supervisor'){deviceSql+=' AND e.department=?';deviceArgs.push(user.department_scope||'');}
   deviceSql+=' ORDER BY r.occurred_at_device ASC LIMIT 10001';
   const deviceRaw=(await db.prepare(deviceSql).bind(...deviceArgs).all()).results||[];
@@ -598,9 +606,66 @@ async function attendanceSummary(db,user,request){
     financial_mode:'draft_preview_only',device_events_included:deviceRaw.length,device_classification_provisional:true});
 }
 
+
+/* Self-service attendance, not a direct MB10 scan-status feed. */
+function todayAden(){
+ const f=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Aden',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()).map(x=>[x.type,x.value]));
+ return f.year+'-'+f.month+'-'+f.day;
+}
+async function myAttendance(db,user,request){
+ if(!user.employee_id)return response({linked:false,alerts:[{code:'unlinked',level:'warning',title:'حسابك غير مربوط بعامل',message:'اطلب من المدير ربط حسابك بسجل العامل الصحيح.'}]});
+ const employee=await db.prepare('SELECT id,name,code,status FROM employees WHERE organization_id=? AND id=?').bind(user.organization_id,user.employee_id).first();
+ if(!employee)return response({linked:false,alerts:[{code:'invalid_link',level:'warning',title:'ربط العامل يحتاج تصحيحًا',message:'يرجى التواصل مع الإدارة.'}]});
+ const today=todayAden(),p=new URL(request.url).searchParams,date=str(p.get('date')||today,10);
+ weekdayOf(date);
+ if(date>today)return reject(400,'تاريخ مستقبلي غير متاح');
+ const url=new URL(request.url);url.pathname='/api/attendance-summary';url.searchParams.set('date',date);url.searchParams.set('employee_id',user.employee_id);
+ const res=await attendanceSummary(db,{...user,self_only:true},new Request(url.toString(),request));
+ if(!res.ok)return res;
+ const report=await res.json(),day=report.items?.[0];
+ if(!day)return reject(404,'لا توجد بيانات للعامل المرتبط');
+ const row=await db.prepare('SELECT state,finished_at FROM mb10_sync_jobs WHERE organization_id=? ORDER BY requested_at DESC LIMIT 1').bind(user.organization_id).first();
+ const shiftEnd=day.scheduled_end,shiftStart=day.scheduled_start;
+ const minuteDelay=15*60000,now=Date.now();
+ const deadline=time=>Date.parse(date+'T'+time+':00+03:00')+minuteDelay;
+ const syncAt=row?.state==='done'&&row.finished_at?Date.parse(row.finished_at.replace(' ','T')+'Z'):NaN;
+ const afterStart=!!shiftStart&&now>=deadline(shiftStart),afterEnd=!!shiftEnd&&now>=deadline(shiftEnd);
+ const syncedStart=Number.isFinite(syncAt)&&!!shiftStart&&syncAt>=deadline(shiftStart);
+ const syncedEnd=Number.isFinite(syncAt)&&!!shiftEnd&&syncAt>=deadline(shiftEnd);
+ const alerts=[],add=(code,level,title,message)=>alerts.push({code,level,title,message});
+ if(employee.status!=='active')add('inactive','info','حساب العامل غير نشط','راجع الإدارة بشأن نظام دوامك.');
+ else if(day.weekly_off)add('weekly_off','info','اليوم إجازة أسبوعية','لا يلزم تبصيم حضور اعتيادي يوم الجمعة.');
+ else {
+  if((day.review_issues||[]).some(x=>x!=='device_classification_requires_review'))
+    add('review','warning','حركة بصمة تحتاج مراجعة','هناك تسلسل غير مكتمل؛ راجع الإدارة ولا تُعدل البصمة الأصلية.');
+  if(!day.first_in&&afterStart){
+   if(syncedStart)add('checkin_not_recorded','warning','بصمة حضور غير ظاهرة','لا توجد بصمة حضور مسجلة بعد مزامنة الجهاز؛ إن كنت قد بصمت فأرسل بلاغًا للمراجعة.');
+   else add('checkin_pending','info','بانتظار مزامنة بصمة الحضور','لا يمكن الجزم بفشل البصمة أو الغياب قبل مزامنة حديثة للجهاز.');
+  }else if(day.first_in&&!day.last_out&&afterEnd){
+   if(syncedEnd)add('checkout_not_recorded','warning','بصمة انصراف غير ظاهرة','لم تظهر بصمة انصراف بعد مزامنة الجهاز؛ يمكنك إرسال بلاغ للإدارة.');
+   else add('checkout_pending','info','بانتظار مزامنة الانصراف','لا يمكن الجزم بعدم تسجيل البصمة قبل اكتمال المزامنة.');
+  }
+  if(row?.state==='error')add('sync_error','info','تعذرت مزامنة الجهاز','البيانات قد تكون متأخرة؛ تحقق مع الإدارة.');
+ }
+ if(!alerts.length)add('clear','success','لا توجد تنبيهات حاليًا','التسجيل ظاهر ضمن آخر البيانات المتاحة؛ فشل قراءة الإصبع لا يمكن رصده مباشرة من هذا السجل.');
+ return response({linked:true,employee:{name:employee.name,code:employee.code},date,today,summary:day,alerts,
+   last_sync:row||null,verified_scan_failure:false,notification_mode:'in_app_after_sync',payroll_changed:false,timezone:'Asia/Aden'});
+}
+async function myPunchReport(db,user,request){
+ if(!user.employee_id)return reject(403,'حسابك غير مرتبط بسجل عامل');
+ const b=await bodyJson(request),date=str(b.date,10),kind=str(b.kind,30),detail=str(b.detail,500);
+ weekdayOf(date);
+ if(date>todayAden()||!['checkin','checkout','scan_failed','other'].includes(kind)||detail.length<8)
+   return reject(400,'أدخل التاريخ ونوع المشكلة ووصفًا من 8 أحرف على الأقل');
+ const n=await db.prepare("SELECT COUNT(*) AS n FROM audit_events WHERE organization_id=? AND actor_user_id=? AND event_type='attendance.punch_issue_reported' AND occurred_at>=datetime('now','-1 day')").bind(user.organization_id,user.id).first();
+ if(Number(n?.n||0)>=5)return reject(429,'تجاوزت عدد البلاغات اليومية المسموح، تواصل مع الإدارة');
+ await audit(db,user,'attendance.punch_issue_reported','employee',user.employee_id,{date,kind,detail});
+ return response({ok:true,review_required:true,attendance_unchanged:true,message:'تم تسجيل البلاغ لمراجعة الإدارة، دون تغيير البصمة أو المستحقات.'},201);
+}
+
 /* Phase 2: manager-reviewed mapping. No raw punch conversion or payroll writes. */
 async function deviceMappings(db,user,method,request){
-  if(user.role!=='admin')return reject(403,'المطابقة لمدير النظام فقط');
+  if(user.self_only||user.role!=='admin')return reject(403,'المطابقة لمدير النظام فقط');
   if(method==='GET'){
     const raw=await db.prepare("SELECT device_user_id,COUNT(*) AS punch_count,MIN(occurred_at_device) AS first_punch,MAX(occurred_at_device) AS last_punch FROM device_raw_punches WHERE organization_id=? AND device_id='mb10-main' GROUP BY device_user_id ORDER BY CAST(device_user_id AS INTEGER)").bind(ORG).all();
     const employees=await db.prepare('SELECT id,code,name,device_user_id FROM employees WHERE organization_id=? ORDER BY name').bind(ORG).all();
@@ -712,7 +777,7 @@ async function attendanceRegister(db,user,request){
    "WHEN z.kind='in' AND z.previous_kind IS NULL THEN 'attendance' "+
    "WHEN z.kind='out' AND z.previous_kind='in' THEN 'departure' ELSE 'review' END AS movement_type FROM ("+sequence+") z";
  const filters=[],args=[ORG,ORG];
- if(user.role==='viewer'){filters.push('q.employee_id=?');args.push(user.employee_id||'');}
+ if(user.self_only){filters.push('q.employee_id=?');args.push(user.employee_id||'');}
  if(user.role==='supervisor'){filters.push('q.department=? AND q.employee_id IS NOT NULL');args.push(user.department_scope||'');}
  if(user.role==='accountant')filters.push('q.employee_id IS NOT NULL');
  if(employeeId){filters.push('q.employee_id=?');args.push(employeeId);}
@@ -740,7 +805,7 @@ async function attendanceRegister(db,user,request){
 }
 
 async function deviceAttendance(db,user,request){
-  if(!['admin','hr','supervisor'].includes(user.role))return reject(403,'ليس لديك صلاحية لعرض بصمات العاملين');
+  if(user.self_only||!['admin','hr','supervisor'].includes(user.role))return reject(403,'ليس لديك صلاحية لعرض بصمات العاملين');
   const u=new URL(request.url);
   const date=str(u.searchParams.get('date'),10);
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return reject(400,'حدد تاريخًا صحيحًا');
@@ -793,17 +858,18 @@ export async function onRequest(context) {
       if(!user) return reject(401,'يرجى تسجيل الدخول');
       if(user.role!=='admin') return reject(403,'صلاحيات المدير فقط');
       const rows=await db.prepare("SELECT user_id,permission_key,allowed FROM user_permission_overrides WHERE organization_id=? ORDER BY user_id,permission_key").bind(ORG).all();
-      return response({items:rows.results||[],keys:['device.sync','device.attendance.view','device.correction','employees.view','employees.edit','attendance.manual','reports.view','users.manage']});
+      return response({items:rows.results||[],keys:['data.self_only','device.sync','device.attendance.view','device.correction','employees.view','employees.edit','attendance.manual','reports.view','users.manage']});
     }
     if (path==='permissions' && method==='PUT') {
       const user=await sessionUser(db,request);
       if(!user) return reject(401,'يرجى تسجيل الدخول');
       if(user.role!=='admin') return reject(403,'صلاحيات المدير فقط');
       const b=await bodyJson(request);
-      const valid=new Set(['device.sync','device.attendance.view','device.correction','employees.view','employees.edit','attendance.manual','reports.view','users.manage']);
+      const valid=new Set(['data.self_only','device.sync','device.attendance.view','device.correction','employees.view','employees.edit','attendance.manual','reports.view','users.manage']);
       if(typeof b.user_id!=='string'||!valid.has(b.permission_key)||![true,false,null].includes(b.allowed))return reject(400,'بيانات الصلاحية غير صالحة');
       const target=await db.prepare("SELECT id,role FROM users WHERE id=? AND organization_id=?").bind(b.user_id,ORG).first();
       if(!target) return reject(404,'المستخدم غير موجود');
+      if(b.permission_key==='data.self_only' && (target.role==='admin'||b.allowed===false))return reject(400,'النطاق الشخصي يتطلب حسابًا غير إداري ويقبل التفعيل أو الافتراضي');
       if(target.id===user.id && b.permission_key==='users.manage' && b.allowed===false)return reject(400,'لا يمكن سحب صلاحية إدارة المستخدمين من نفسك');
       if(b.allowed===null) await db.prepare("DELETE FROM user_permission_overrides WHERE organization_id=? AND user_id=? AND permission_key=?").bind(ORG,target.id,b.permission_key).run();
       else await db.prepare("INSERT INTO user_permission_overrides(organization_id,user_id,permission_key,allowed) VALUES(?,?,?,?) ON CONFLICT(organization_id,user_id,permission_key) DO UPDATE SET allowed=excluded.allowed,updated_at=datetime('now')").bind(ORG,target.id,b.permission_key,b.allowed?1:0).run();
@@ -814,14 +880,14 @@ export async function onRequest(context) {
     if (path==='mb10-sync' && method==='GET') {
       const user=await sessionUser(db,request);
       if(!user) return reject(401,'يرجى تسجيل الدخول');
-      if(!(await allowedByPermission(db,user,'device.sync',user.role==='hr'))) return reject(403,'ليس لديك صلاحية');
+      if(user.self_only||!(await allowedByPermission(db,user,'device.sync',user.role==='hr'))) return reject(403,'ليس لديك صلاحية');
       const last=await db.prepare("SELECT id,state,requested_at,started_at,finished_at,new_count,duplicate_count,error_text FROM mb10_sync_jobs WHERE organization_id=? ORDER BY requested_at DESC LIMIT 1").bind(ORG).first();
       return response({job:last||null});
     }
     if (path==='mb10-sync' && method==='POST') {
       const user=await sessionUser(db,request);
       if(!user) return reject(401,'يرجى تسجيل الدخول');
-      if(!(await allowedByPermission(db,user,'device.sync',user.role==='hr'))) return reject(403,'ليس لديك صلاحية');
+      if(user.self_only||!(await allowedByPermission(db,user,'device.sync',user.role==='hr'))) return reject(403,'ليس لديك صلاحية');
       if(user.must_change_password) return reject(403,'يجب تغيير كلمة المرور');
       const existing=await db.prepare("SELECT id,state FROM mb10_sync_jobs WHERE organization_id=? AND state IN ('pending','running') ORDER BY requested_at DESC LIMIT 1").bind(ORG).first();
       if(existing) return response({id:existing.id,state:existing.state,already_pending:true});
@@ -851,7 +917,7 @@ export async function onRequest(context) {
       if (method!=='POST') return reject(405,'طريقة غير مدعومة؛ استخدم POST');
       return importMb10Punches(context);
     }
-    if (path==='status' && method==='GET') return response({setupRequired:await setupRequired(db),version:'0.2.12'});
+    if (path==='status' && method==='GET') return response({setupRequired:await setupRequired(db),version:'0.2.13'});
     if (path==='setup' && method==='POST') return initialSetup(db,env,request);
     if (path==='login' && method==='POST') return login(db,request);
     const user=await sessionUser(db,request);
@@ -860,6 +926,8 @@ export async function onRequest(context) {
     if (path==='me' && method==='GET') return response({user:publicUser(user)});
     if (path==='change-password' && method==='POST') return changePassword(db,user,request);
     if (user.must_change_password) return reject(403,'يجب تغيير كلمة المرور قبل متابعة العمل');
+    if (path==='my-attendance' && method==='GET') return myAttendance(db,user,request);
+    if (path==='my-punch-report' && method==='POST') return myPunchReport(db,user,request);
     if (path==='attendance-register' && method==='GET') return attendanceRegister(db,user,request);
     if (path==='device-attendance' && method==='GET') return deviceAttendance(db,user,request);
     if (path==='device-mappings' && ['GET','POST'].includes(method)) return deviceMappings(db,user,method,request);

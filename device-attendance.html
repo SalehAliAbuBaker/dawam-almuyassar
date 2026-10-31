@@ -1,16 +1,23 @@
 <!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>سجل بصمات الدوام | دوام الميسر</title>
-<style>body{font:16px system-ui,Tahoma,sans-serif;background:#f4f7f4;color:#193d32;margin:0;padding:20px}main{max-width:1100px;margin:auto;background:white;border:1px solid #dae5de;padding:22px;border-radius:16px}h1{font-size:24px}p{line-height:1.8}button,input{font:inherit;padding:10px;border-radius:8px;border:1px solid #b4c5ba}button{background:#176744;color:white;cursor:pointer}.controls{display:flex;gap:12px;flex-wrap:wrap;align-items:center}.stats{margin:18px 0;padding:12px;background:#eaf4ed;border-radius:10px}table{width:100%;border-collapse:collapse}th,td{padding:10px;text-align:right;border-bottom:1px solid #e4ebe6}th{background:#edf4ef}.scroll{overflow-x:auto}.warn{color:#9c5610}.ok{color:#176744}a{color:#176744}@media(max-width:600px){body{padding:8px}main{padding:12px}}</style></head><body><main>
+<style>body{font:16px system-ui,Tahoma,sans-serif;background:#f4f7f4;color:#193d32;margin:0;padding:20px}main{max-width:1100px;margin:auto;background:white;border:1px solid #dae5de;padding:22px;border-radius:16px}h1{font-size:24px}p{line-height:1.8}button,input{font:inherit;padding:10px;border-radius:8px;border:1px solid #b4c5ba}button{background:#176744;color:white;cursor:pointer}.controls{display:flex;gap:12px;flex-wrap:wrap;align-items:center}.stats{margin:18px 0;padding:12px;background:#eaf4ed;border-radius:10px}table{width:100%;border-collapse:collapse}th,td{padding:10px;text-align:right;border-bottom:1px solid #e4ebe6}th{background:#edf4ef}.scroll{overflow-x:auto}.warn{color:#9c5610}.ok{color:#176744}.movement-tag{display:inline-block;font-weight:700;border-radius:16px;padding:4px 9px;white-space:nowrap}
+.movement-tag.attendance{color:#08783e;background:#e0f6e8}.movement-tag.departure{color:#ac2424;background:#ffebeb}
+.movement-tag.permission_exit,.movement-tag.permission_return{color:#965408;background:#fff0d5}.movement-tag.review{color:#665a4a;background:#efede9}
+@media print{.movement-tag{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+a{color:#176744}@media(max-width:600px){body{padding:8px}main{padding:12px}}</style></head><body><main>
 <h1>سجل البصمات المستوردة — جهاز MB10</h1>
 <p>معاينة إدارية مباشرة من السجل الخام، دون إنشاء حركات حضور جديدة أو احتساب أي خصومات. التوقيت من ساعة جهاز البصمة.</p>
 <div class="controls"><label>التاريخ <input type="date" id="date"></label><button id="load">عرض البصمات</button><a href="/device-mapping.html">مطابقة أرقام البصمة</a></div>
+<p><span class="movement-tag attendance">حضور</span> <span class="movement-tag departure">انصراف</span> <span class="movement-tag permission_exit">استعذار وخروج مؤقت</span> <span class="movement-tag review">مراجعة</span></p>
 <div id="stats" class="stats">اختر التاريخ لعرض السجلات.</div>
 <div class="scroll"><table><thead><tr><th>الوقت</th><th>رقم البصمة</th><th>العامل</th><th>الحركة الأولية</th><th>الحالة</th></tr></thead><tbody id="rows"></tbody></table></div>
 <p class="warn">تنبيه: دخول 0 وخروج 1 تفسير أولي. الرمز 255 والحركات الناقصة تحتاج مراجعة. هذه الشاشة لا ترحّل بيانات للرواتب.</p>
 <script>
 const el=id=>document.getElementById(id);
 el('date').value=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Aden',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
-function cell(tr,v){const td=document.createElement('td');td.textContent=String(v);tr.append(td)}
+function cell(tr,v){const td=document.createElement('td');td.textContent=String(v);tr.append(td);return td}
+const movementLabels={attendance:'حضور',departure:'انصراف',permission_exit:'استعذار — خروج مؤقت',permission_return:'استعذار — عودة',review:'تحتاج مراجعة'};
+function movementCell(tr,item){const td=cell(tr,'');const tag=document.createElement('span');tag.className='movement-tag '+(item.movement_type||'review');tag.textContent=movementLabels[item.movement_type]||'تحتاج مراجعة';td.append(tag)}
 async function load(){
   el('stats').textContent='جارٍ تحميل السجلات...';el('rows').replaceChildren();
   try{
@@ -23,8 +30,8 @@ async function load(){
       cell(tr,item.occurred_at_device.slice(11));
       cell(tr,item.device_user_id);
       cell(tr,item.employee_name||'لم تتم المطابقة');
-      cell(tr,item.kind==='in'?'دخول (0)':item.kind==='out'?'خروج (1)':'غير مصنف ('+item.punch_code+')');
-      cell(tr,item.requires_review?'مراجعة مطلوبة':'مطابق — أولي');
+      movementCell(tr,item);
+      cell(tr,item.requires_review||item.movement_type==='review'?'مراجعة مطلوبة':item.movement_type==='permission_return'?'استعذار '+Number(item.permission_minutes||0)+' دقيقة':'مطابق — أولي');
       el('rows').append(tr);
     }
   }catch(e){el('stats').textContent=e.message}

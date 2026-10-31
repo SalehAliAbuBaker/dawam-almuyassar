@@ -278,7 +278,19 @@ async function punches(db,user,method,request){
     if (user.role==='supervisor'){sql+=' AND e.department=?';args.push(user.department_scope||'');}
     sql+=' ORDER BY p.occurred_at DESC LIMIT 2000';
     const rows=await db.prepare(sql).bind(...args).all();
-    return response({items:rows.results});
+    // MB10 punches remain immutable in device_raw_punches. Expose matched, unambiguous
+    // device events alongside manual entries without copying or double-posting data.
+    let deviceSql="SELECT r.event_fingerprint,r.occurred_at_device AS timestamp,r.punch_code,e.id AS employee_id FROM device_raw_punches r JOIN employees e ON e.organization_id=r.organization_id AND e.device_user_id=r.device_user_id WHERE r.organization_id=? AND r.device_id='mb10-main' AND r.punch_code IN (0,1) AND NOT EXISTS (SELECT 1 FROM punch_events p WHERE p.organization_id=r.organization_id AND p.device_id=r.device_id AND p.device_event_id=r.event_fingerprint)";
+    const deviceArgs=[ORG];
+    if(user.role==='viewer'){deviceSql+=' AND e.id=?';deviceArgs.push(user.employee_id||'');}
+    if(user.role==='supervisor'){deviceSql+=' AND e.department=?';deviceArgs.push(user.department_scope||'');}
+    deviceSql+=' ORDER BY r.occurred_at_device DESC LIMIT 2000';
+    const deviceRows=(await db.prepare(deviceSql).bind(...deviceArgs).all()).results||[];
+    const deviceItems=deviceRows.map(r=>({id:'device:'+r.event_fingerprint,employee_id:r.employee_id,
+      timestamp:r.timestamp,kind:r.punch_code===0?'in':'out',source:'device',
+      device_id:'mb10-main',device_event_id:r.event_fingerprint,read_only:true}));
+    const items=[...(rows.results||[]),...deviceItems].sort((a,b)=>b.timestamp.localeCompare(a.timestamp)).slice(0,2000);
+    return response({items,device_count:deviceItems.length});
   }
   if (method!=='POST'||!canWritePunch(user)) return reject(403,'ليس لديك صلاحية تسجيل حركة حضور');
   const b=await bodyJson(request),employee=await db.prepare('SELECT * FROM employees WHERE id=? AND organization_id=?').bind(str(b.employee_id,80),ORG).first();
@@ -436,8 +448,19 @@ async function attendanceSummary(db,user,request){
   if(user.role==='viewer'){sql+=' AND p.employee_id=?';args.push(user.employee_id||'');}
   if(user.role==='supervisor'){sql+=' AND e.department=?';args.push(user.department_scope||'');}
   sql+=' ORDER BY p.occurred_at ASC LIMIT 10001';
-  const events=(await db.prepare(sql).bind(...args).all()).results||[];
-  if(events.length>10000)return reject(409,'عدد الحركات كبير؛ يلزم تضييق نطاق الاستعلام');
+  const manualEvents=(await db.prepare(sql).bind(...args).all()).results||[];
+  if(manualEvents.length>10000)return reject(409,'عدد الحركات كبير؛ يلزم تضييق نطاق الاستعلام');
+  let deviceSql="SELECT e.id AS employee_id,r.occurred_at_device AS timestamp,r.punch_code,e.basic_salary,e.transport_allowance,e.daily_incentive FROM device_raw_punches r JOIN employees e ON e.organization_id=r.organization_id AND e.device_user_id=r.device_user_id WHERE r.organization_id=? AND r.device_id='mb10-main' AND r.occurred_at_device>=? AND r.occurred_at_device<? AND r.punch_code IN (0,1) AND NOT EXISTS (SELECT 1 FROM punch_events p WHERE p.organization_id=r.organization_id AND p.device_id=r.device_id AND p.device_event_id=r.event_fingerprint)";
+  const deviceArgs=[ORG,date+'T00:00',date+'T23:59:59.999'];
+  if(requested){deviceSql+=' AND e.id=?';deviceArgs.push(requested);}
+  if(user.role==='viewer'){deviceSql+=' AND e.id=?';deviceArgs.push(user.employee_id||'');}
+  if(user.role==='supervisor'){deviceSql+=' AND e.department=?';deviceArgs.push(user.department_scope||'');}
+  deviceSql+=' ORDER BY r.occurred_at_device ASC LIMIT 10001';
+  const deviceRaw=(await db.prepare(deviceSql).bind(...deviceArgs).all()).results||[];
+  if(deviceRaw.length>10000)return reject(409,'عدد الحركات كبير؛ يلزم تضييق نطاق الاستعلام');
+  const events=[...manualEvents,...deviceRaw.map(r=>({...r,kind:r.punch_code===0?'in':'out',source:'device'}))];
+  // Punch classification from device codes is provisional; deduction preview needs
+  // explicit manager review before any financial approval or posting.
   const row=await db.prepare('SELECT data_json FROM organization_settings WHERE organization_id=?').bind(ORG).first();
   const config={...DEFAULT_ATTENDANCE_SCHEDULE,...JSON.parse(row?.data_json||'{}')};
   const employeeRows=new Map(events.map(e=>[e.employee_id,e]));
@@ -451,7 +474,7 @@ async function attendanceSummary(db,user,request){
   return response({date,items:ids.map(id=>({employee_id:id,
     ...attendanceDay(events.filter(e=>e.employee_id===id),date,config,employeeRows.get(id),showFinancial)})),
     schedule:{start_time:config.start_time,end_time:config.end_time,thursday_end_time:config.thursday_end_time,weekly_off:'friday'},
-    financial_mode:'draft_preview_only'});
+    financial_mode:'draft_preview_only',device_events_included:deviceRaw.length,device_classification_provisional:true});
 }
 
 /* Phase 2: manager-reviewed mapping. No raw punch conversion or payroll writes. */

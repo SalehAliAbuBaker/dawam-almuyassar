@@ -33,7 +33,7 @@ async function refresh(){
       employees.set(e.id,e);
       byId('employee').add(new Option(e.name+' ('+e.code+')'+(e.device_user_id?' — مرتبط '+e.device_user_id:''),e.id));
     }
-    for(const d of data.raw_users)byId('device').add(new Option('رقم '+d.device_user_id+' — '+d.punch_count+' حركة',d.device_user_id));
+    for(const d of data.raw_users)byId('device').add(new Option('رقم البصمة: '+d.device_user_id+' | عدد الحركات: '+d.punch_count,d.device_user_id));
     byId('status').textContent='العاملون: '+data.employees.length+' | أرقام البصمات ذات الحركات: '+data.raw_users.length;
   }catch(e){byId('status').textContent=e.message}
 }

@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#176546">
+<title>الحضور والبصمة — دوام الميسر</title>
+<style>
+:root{font-family:system-ui,Tahoma,sans-serif;background:#f3f7f4;color:#153c2b}
+*{box-sizing:border-box}body{max-width:1220px;margin:auto;padding:18px}
+h1{font-size:1.55rem;margin:8px 0}h2{font-size:1.15rem;margin:6px 0 16px}
+a{color:#135f3b}p{line-height:1.6}.muted{font-size:.89rem;color:#647569}
+.panel{background:#fff;border:1px solid #d8e5dc;border-radius:13px;margin:12px 0;padding:15px}
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:.9rem}
+input,select{min-width:0;width:100%;border:1px solid #adcbba;border-radius:9px;padding:10px;font:inherit;background:white;color:#153c2b}
+button{border:0;border-radius:9px;padding:11px 16px;color:#fff;background:#176546;cursor:pointer;font:inherit}
+button.secondary{background:#e5f1e9;color:#164d33}
+button:disabled{opacity:.48;cursor:not-allowed}
+.actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:13px 0}
+.status{border-radius:9px;padding:11px;background:#e6f2e9;white-space:pre-wrap;margin:11px 0}.status.error{background:#ffe6e5;color:#95201b}
+.stat{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.stat span{background:#eff5f1;padding:8px 12px;border-radius:8px;font-size:.9rem}
+.table-wrap{overflow:auto;border:1px solid #dbe8de;border-radius:9px}
+table{border-collapse:collapse;width:100%;font-size:.91rem;white-space:nowrap;text-align:right}
+th{background:#e6f1e8}th,td{border-bottom:1px solid #e4ebe5;padding:9px 12px}
+tbody tr:hover{background:#f6faf7}
+.flag{color:#976214}.review{color:#a12121}.pager{display:flex;gap:10px;justify-content:center;align-items:center;padding:15px}
+dialog{width:min(1080px,calc(100vw - 20px));max-height:92vh;border:1px solid #ccddd1;border-radius:12px;padding:12px}
+dialog::backdrop{background:#102a1ca8}.preview-content{background:#fff;padding:12px;overflow:auto;max-height:66vh}
+.report-table{white-space:normal}.report-table td,.report-table th{font-size:.82rem;vertical-align:top}
+.report-title{text-align:center;margin:8px 0}.report-meta{text-align:center;color:#4b6557;font-size:.86rem;margin-bottom:16px}
+@page{size:A4 landscape;margin:11mm}
+@media print{
+ html,body{background:white!important;padding:0!important;margin:0!important;max-width:none!important}
+ body>*:not(dialog){display:none!important}
+ dialog{border:0!important;box-shadow:none!important;padding:0!important;width:100%!important;max-width:none!important;max-height:none!important;position:static!important;overflow:visible!important;margin:0!important}
+ dialog .not-print{display:none!important}
+ dialog .preview-content{max-height:none!important;overflow:visible!important;padding:0!important}
+ .report-table{width:100%!important;border-collapse:collapse!important}
+ .report-table thead{display:table-header-group}.report-table tr{break-inside:avoid;page-break-inside:avoid}
+ .report-table td,.report-table th{border:1px solid #888!important;padding:5px 6px!important;color:#111!important}
+ .report-title{color:#111} 
+}
+</style></head><body>
+<header><h1>الحضور والبصمة</h1><p class="muted">دوام الميسر — استعراض الحركات اليدوية وحركات MB10، مع البحث والفلترة والمعاينة والطباعة والمشاركة. التقارير لا تعتمد الرواتب أو الخصومات.</p>
+<nav class="actions"><a href="/">الواجهة الأساسية</a><a href="/manage-punches.html">إدارة وتصحيح البصمات</a><a href="/offline.html">الحضور دون إنترنت</a></nav></header>
+<section class="panel"><h2>البحث والفلترة</h2>
+<div class="controls">
+<label>بحث ذكي (اسم، رقم عامل، رقم بصمة)<input id="search" placeholder="اكتب اسمًا أو رقمًا" autocomplete="off"></label>
+<label>من تاريخ<input type="date" id="from"></label><label>إلى تاريخ<input type="date" id="to"></label>
+<label>العامل<select id="employee"><option value="">جميع العاملين</option></select></label>
+<label>نوع الحركة<select id="kind"><option value="">جميع الحركات</option><option value="in">دخول</option><option value="out">خروج</option><option value="other">غير محدد</option></select></label>
+<label>المصدر<select id="source"><option value="">جميع المصادر</option><option value="device">جهاز MB10</option><option value="manual">يدوي</option><option value="import">استيراد</option><option value="demo">تجريبي</option></select></label>
+</div>
+<div class="actions"><button id="apply">عرض النتائج</button><button id="reset" class="secondary">إلغاء الفلاتر</button></div>
+<div id="status" class="status" role="status">اختر خيارات البحث ثم اضغط «عرض النتائج».</div>
+</section>
+<section class="panel">
+<div class="stat"><span id="total">عدد الحركات: —</span><span id="shown">المعروض: —</span><span id="pageText">صفحة 1</span></div>
+<div class="actions">
+<button id="previewBtn">معاينة التقرير</button>
+<button id="printBtn" class="secondary">طباعة / حفظ PDF</button>
+<button id="shareBtn" class="secondary">مشاركة</button>
+</div>
+<div class="table-wrap"><table><thead><tr><th>م</th><th>العامل</th><th>رقم العامل</th><th>رقم البصمة</th><th>التاريخ</th><th>الوقت</th><th>الحركة</th><th>المصدر</th><th>الحالة</th></tr></thead>
+<tbody id="rows"><tr><td colspan="9">لم تُحمّل البيانات بعد.</td></tr></tbody></table></div>
+<div class="pager"><button class="secondary" id="prev">السابق</button><span id="pageIndex">1</span><button class="secondary" id="next">التالي</button></div>
+<p class="muted">تُحفظ البيانات في Cloudflare؛ يتطلب استعراض السجل والمشاركة اتصالًا بالإنترنت وصلاحية دخول. المعاينة والطباعة والمشاركة تشمل نتائج الفلترة كلها ضمن حد 5000 حركة، لا الصفحة المعروضة فقط.</p>
+</section>
+<dialog id="previewDialog" aria-label="معاينة الحضور والبصمة">
+<div class="actions not-print"><button id="close">إغلاق المعاينة</button><button id="doPrint">طباعة / PDF</button></div>
+<div class="preview-content" id="report"></div>
+</dialog>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const kinds={in:'دخول',out:'خروج',other:'غير محدد'},sources={device:'جهاز MB10',manual:'يدوي',import:'استيراد',demo:'تجريبي'};
+let page=1,total=0,list=[],loading=false,lastFilters=null;
+const PAGE_SIZE=100,EXPORT_LIMIT=5000;
+function message(text,bad=false){$('status').textContent=text;$('status').className='status'+(bad?' error':'')}
+function todayAden(){const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Aden',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const d=Object.fromEntries(parts.map(x=>[x.type,x.value]));return d.year+'-'+d.month+'-'+d.day}
+function before(date,n){const d=new Date(date+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-n);return d.toISOString().slice(0,10)}
+const start=todayAden();$('from').value=before(start,6);$('to').value=start;
+function params(pageNumber=1,size=PAGE_SIZE,filters=readFilters()){const p=new URLSearchParams();for(const [k,v] of Object.entries(filters))if(v)p.set(k,v);p.set('page',String(pageNumber));p.set('page_size',String(size));return p}
+function readFilters(){return {search:$('search').value.trim(),from:$('from').value,to:$('to').value,kind:$('kind').value,source:$('source').value,employee_id:$('employee').value}}
+function equalFilters(a,b){return JSON.stringify(a)===JSON.stringify(b)}
+async function api(url){let res;try{res=await fetch(url,{credentials:'same-origin',cache:'no-store'})}catch{throw Error('لا يوجد اتصال بالخادم. تحقق من الإنترنت وأعد المحاولة.')};let data;try{data=await res.json()}catch{throw Error('تعذر قراءة استجابة الخادم')};if(!res.ok)throw Error(res.status===401?'انتهت جلسة الدخول؛ افتح التطبيق وسجّل الدخول ثم عد لهذه الصفحة':data.error||'تعذر تحميل الحركات');return data}
+function td(row,value){const cell=document.createElement('td');cell.textContent=value==null?'':String(value);row.append(cell);return cell}
+function formatDate(item){return (item.timestamp||'').slice(0,10)}
+function formatTime(item){return (item.timestamp||'').slice(11,19)}
+function itemStatus(item){return !item.employee_id?'غير مطابق':item.kind==='other'?'بحاجة إلى مراجعة':item.corrected?'مصححة':'مسجلة'}
+function itemName(item){return item.employee_name||'غير مطابق'}
+function makeRow(item,n){const tr=document.createElement('tr');td(tr,n);td(tr,itemName(item));td(tr,item.employee_code||'—');td(tr,item.device_user_id||'—');td(tr,formatDate(item));td(tr,formatTime(item));td(tr,kinds[item.kind]||'غير محدد');td(tr,sources[item.source]||item.source);td(tr,itemStatus(item));return tr}
+async function load(resetPage=true){if(loading)return;if(resetPage)page=1;const f=readFilters();if(f.from&&f.to&&f.from>f.to){message('تاريخ البداية لا يمكن أن يكون بعد تاريخ النهاية.',true);return}
+loading=true;$('apply').disabled=true;message('جاري قراءة الحركات...');
+try{const data=await api('/api/attendance-register?'+params(page,PAGE_SIZE,f));lastFilters=f;total=data.total;list=data.items||[];const body=$('rows');body.replaceChildren();if(!list.length){const tr=document.createElement('tr');const empty=td(tr,'لا توجد حركات مطابقة للبحث');empty.colSpan=9;body.append(tr)}
+else list.forEach((r,i)=>body.append(makeRow(r,(page-1)*PAGE_SIZE+i+1)));
+$('total').textContent='عدد الحركات: '+total;$('shown').textContent='المعروض: '+list.length;$('pageText').textContent='الصفحة '+page+' من '+Math.max(1,Math.ceil(total/PAGE_SIZE));$('pageIndex').textContent=String(page);
+$('prev').disabled=page<=1;$('next').disabled=page*PAGE_SIZE>=total;
+message('تم عرض '+list.length+' حركة من '+total+' حركة مطابقة.')}catch(e){message(e.message,true)}finally{loading=false;$('apply').disabled=false}}
+$('apply').onclick=()=>load(true);
+$('search').addEventListener('keydown',e=>{if(e.key==='Enter')load(true)});
+$('reset').onclick=()=>{for(const id of ['search','from','to','employee','kind','source'])$(id).value='';load(true)};
+$('prev').onclick=()=>{if(page>1){page--;load(false)}};
+$('next').onclick=()=>{if(page*PAGE_SIZE<total){page++;load(false)}};
+async function loadEmployees(){try{const data=await api('/api/employees');const select=$('employee');for(const e of data.items||[]){const opt=document.createElement('option');opt.value=e.id;opt.textContent=e.name+(e.code?' — '+e.code:'');select.append(opt)}}catch(e){ /* The report API still enforces the user's own scope. */ }}
+async function fetchReport(){const f=readFilters();if(!lastFilters||!equalFilters(lastFilters,f))throw Error('اضغط «عرض النتائج» بعد تغيير الفلاتر أولًا.');if(!total)throw Error('لا توجد حركات لإعداد التقرير.');if(total>EXPORT_LIMIT)throw Error('نتائج البحث أكثر من 5000 حركة. حدد فترة زمنية أقصر قبل المعاينة أو المشاركة.');
+let all=[];const pages=Math.ceil(total/250);for(let i=1;i<=pages;i++){const d=await api('/api/attendance-register?'+params(i,250,f));if(d.total!==total)throw Error('تغيرت البيانات أثناء إعداد التقرير، حدّث القائمة ثم أعد المحاولة.');all.push(...(d.items||[]))}
+if(all.length!==total)throw Error('تعذر قراءة جميع الحركات؛ حدّث القائمة وأعد المحاولة.');return {items:all,filters:f}}
+function describe(f){return ['من: '+(f.from||'البداية'),'إلى: '+(f.to||'اليوم'),'النوع: '+(kinds[f.kind]||'الكل'),'المصدر: '+(sources[f.source]||'الكل'),...(f.search?['البحث: '+f.search]:[])].join(' | ')}
+function reportView(data){const r=$('report');r.replaceChildren();const h=document.createElement('h2');h.className='report-title';h.textContent='دوام الميسر — كشف الحضور والبصمة';r.append(h);const meta=document.createElement('p');meta.className='report-meta';meta.textContent=describe(data.filters)+' | إجمالي الحركات: '+data.items.length+' | وقت الجهاز: توقيت اليمن';r.append(meta);
+const table=document.createElement('table');table.className='report-table';const thead=document.createElement('thead'),head=document.createElement('tr');for(const label of ['م','العامل','رقم العامل','رقم البصمة','التاريخ','الوقت','الحركة','المصدر','الحالة']){const th=document.createElement('th');th.textContent=label;head.append(th)}thead.append(head);table.append(thead);
+const tbody=document.createElement('tbody');data.items.forEach((item,index)=>tbody.append(makeRow(item,index+1)));table.append(tbody);r.append(table);
+const foot=document.createElement('p');foot.className='muted';foot.textContent='كشف معلوماتي للمراجعة، لا يثبت وحده اعتماد الخصومات أو المستحقات المالية.';r.append(foot)}
+let reportCache=null;
+async function preview(print=false){$('previewBtn').disabled=true;$('printBtn').disabled=true;message('جاري إعداد المعاينة بجميع النتائج المفلترة...');
+try{reportCache=await fetchReport();reportView(reportCache);$('previewDialog').showModal();message('المعاينة جاهزة: '+reportCache.items.length+' حركة.');if(print)window.print()}catch(e){message(e.message,true)}finally{$('previewBtn').disabled=false;$('printBtn').disabled=false}}
+$('previewBtn').onclick=()=>preview(false);$('printBtn').onclick=()=>preview(true);
+$('close').onclick=()=>$('previewDialog').close();$('doPrint').onclick=()=>window.print();
+function csvEscape(value){let text=String(value==null?'':value);if(/^\s*[=+\-@]/.test(text))text="'"+text;return '"'+text.replace(/"/g,'""')+'"'}
+function makeCsv(items){const headings=['م','العامل','رقم العامل','رقم البصمة','التاريخ','الوقت','الحركة','المصدر','الحالة'];const output=[headings];
+items.forEach((r,i)=>output.push([i+1,itemName(r),r.employee_code||'',r.device_user_id||'',formatDate(r),formatTime(r),kinds[r.kind]||'غير محدد',sources[r.source]||r.source,itemStatus(r)]));
+return '\uFEFF'+output.map(row=>row.map(csvEscape).join(',')).join('\r\n')}
+$('shareBtn').onclick=async()=>{$('shareBtn').disabled=true;message('جاري إعداد ملف المشاركة...');
+try{const d=await fetchReport(),content=makeCsv(d.items),filename='dawam-attendance-'+todayAden()+'.csv';
+const file=new File([content],filename,{type:'text/csv;charset=utf-8'});if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:'دوام الميسر — كشف الحضور والبصمة'});message('تم فتح قائمة المشاركة.')}
+else{const blob=new Blob([content],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);message('الجهاز لا يدعم مشاركة الملف مباشرة؛ تم تنزيل كشف CSV لمشاركته يدويًا.')}
+}catch(e){if(e.name!=='AbortError')message(e.message,true)}finally{$('shareBtn').disabled=false}};
+loadEmployees();load(true);
+</script></body></html>

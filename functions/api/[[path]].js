@@ -73,6 +73,13 @@ function setCookie(token, maxAge) {
 function publicUser(user) {
   return Object.fromEntries(USER_PUBLIC.split(', ').map(k => [k, user[k]]));
 }
+async function allowedByPermission(db,user,key,defaultAllowed) {
+  if(user.role==='admin') return true;
+  const row=await db.prepare("SELECT allowed FROM user_permission_overrides WHERE organization_id=? AND user_id=? AND permission_key=?").bind(ORG,user.id,key).first();
+  // Default-deny for custom grants not yet enforced by endpoint-level scope logic.
+  if(!row) return defaultAllowed;
+  return row.allowed===1;
+}
 function canEditPeople(user) { return user.role === 'admin' || user.role === 'hr'; }
 function canReadAll(user) { return ['admin', 'hr', 'accountant'].includes(user.role); }
 function canWritePunch(user) { return canEditPeople(user) || user.role === 'supervisor'; }
@@ -781,17 +788,40 @@ export async function onRequest(context) {
     if (site && !['same-origin','none'].includes(site)) return reject(403,'طلب من موقع آخر');
   }
   try {
+    if (path==='permissions' && method==='GET') {
+      const user=await sessionUser(db,request);
+      if(!user) return reject(401,'يرجى تسجيل الدخول');
+      if(user.role!=='admin') return reject(403,'صلاحيات المدير فقط');
+      const rows=await db.prepare("SELECT user_id,permission_key,allowed FROM user_permission_overrides WHERE organization_id=? ORDER BY user_id,permission_key").bind(ORG).all();
+      return response({items:rows.results||[],keys:['device.sync','device.attendance.view','device.correction','employees.view','employees.edit','attendance.manual','reports.view','users.manage']});
+    }
+    if (path==='permissions' && method==='PUT') {
+      const user=await sessionUser(db,request);
+      if(!user) return reject(401,'يرجى تسجيل الدخول');
+      if(user.role!=='admin') return reject(403,'صلاحيات المدير فقط');
+      const b=await bodyJson(request);
+      const valid=new Set(['device.sync','device.attendance.view','device.correction','employees.view','employees.edit','attendance.manual','reports.view','users.manage']);
+      if(typeof b.user_id!=='string'||!valid.has(b.permission_key)||![true,false,null].includes(b.allowed))return reject(400,'بيانات الصلاحية غير صالحة');
+      const target=await db.prepare("SELECT id,role FROM users WHERE id=? AND organization_id=?").bind(b.user_id,ORG).first();
+      if(!target) return reject(404,'المستخدم غير موجود');
+      if(target.id===user.id && b.permission_key==='users.manage' && b.allowed===false)return reject(400,'لا يمكن سحب صلاحية إدارة المستخدمين من نفسك');
+      if(b.allowed===null) await db.prepare("DELETE FROM user_permission_overrides WHERE organization_id=? AND user_id=? AND permission_key=?").bind(ORG,target.id,b.permission_key).run();
+      else await db.prepare("INSERT INTO user_permission_overrides(organization_id,user_id,permission_key,allowed) VALUES(?,?,?,?) ON CONFLICT(organization_id,user_id,permission_key) DO UPDATE SET allowed=excluded.allowed,updated_at=datetime('now')").bind(ORG,target.id,b.permission_key,b.allowed?1:0).run();
+      await db.prepare('DELETE FROM sessions WHERE user_id=? AND user_id<>?').bind(target.id,user.id).run();
+      await audit(db,user,'permission.changed','user',target.id,{permission_key:b.permission_key,allowed:b.allowed});
+      return response({ok:true});
+    }
     if (path==='mb10-sync' && method==='GET') {
       const user=await sessionUser(db,request);
       if(!user) return reject(401,'يرجى تسجيل الدخول');
-      if(user.role!=='admin' && user.role!=='hr') return reject(403,'ليس لديك صلاحية');
+      if(!(await allowedByPermission(db,user,'device.sync',user.role==='hr'))) return reject(403,'ليس لديك صلاحية');
       const last=await db.prepare("SELECT id,state,requested_at,started_at,finished_at,new_count,duplicate_count,error_text FROM mb10_sync_jobs WHERE organization_id=? ORDER BY requested_at DESC LIMIT 1").bind(ORG).first();
       return response({job:last||null});
     }
     if (path==='mb10-sync' && method==='POST') {
       const user=await sessionUser(db,request);
       if(!user) return reject(401,'يرجى تسجيل الدخول');
-      if(user.role!=='admin' && user.role!=='hr') return reject(403,'ليس لديك صلاحية');
+      if(!(await allowedByPermission(db,user,'device.sync',user.role==='hr'))) return reject(403,'ليس لديك صلاحية');
       if(user.must_change_password) return reject(403,'يجب تغيير كلمة المرور');
       const existing=await db.prepare("SELECT id,state FROM mb10_sync_jobs WHERE organization_id=? AND state IN ('pending','running') ORDER BY requested_at DESC LIMIT 1").bind(ORG).first();
       if(existing) return response({id:existing.id,state:existing.state,already_pending:true});

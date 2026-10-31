@@ -36,6 +36,22 @@
       document.body.appendChild(link);
     }
   }
+  // Keep the visible stage version consistent without rewriting the 2.9 MB application file.
+  function mountVersion(){
+    const version='0.2.13';
+    if(document.title.includes('0.2.12'))document.title=document.title.replace('0.2.12',version);
+    for(const el of [document.querySelector('.login-art small'),document.getElementById('appVersion'),document.querySelector('.side-footer small')]){
+      if(el && el.textContent.includes('0.2.12'))el.textContent=el.textContent.replace('0.2.12',version);
+    }
+    const foot=document.querySelector('footer.footer');
+    if(foot){
+      for(const node of foot.childNodes){
+        if(node.nodeType===Node.TEXT_NODE && node.textContent.includes('0.2.12')){
+          node.textContent=node.textContent.replace('0.2.12',version);
+        }
+      }
+    }
+  }
   function displayText(el) {
     return (el.innerText||el.textContent||'').replace(/\s+/g,' ').trim();
   }
@@ -112,6 +128,7 @@
     } finally {checking=false;}
   }
   const observer=new MutationObserver(() => {
+    mountVersion();
     if(isAdmin && !mounting && !document.querySelector('.dawam-permissions-entry')) {
       requestAnimationFrame(mount);
     }
@@ -121,6 +138,7 @@
   });
   function start() {
     observer.observe(document.body,{childList:true,subtree:true});
+    mountVersion();
     refreshIdentity();
     // Recheck after in-page login and whenever the tab becomes active.
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshIdentity()});

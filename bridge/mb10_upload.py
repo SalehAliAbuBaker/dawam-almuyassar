@@ -36,7 +36,7 @@ def main():
         batch = items[offset:offset+100]
         body = json.dumps({"items": batch}, ensure_ascii=False).encode("utf-8")
         req = Request(endpoint, data=body, method="POST", headers={
-            "Content-Type": "application/json", "Authorization": "Bearer " + token
+            "Content-Type": "application/json", "User-Agent": "DawamMuyassar-MB10-Bridge/0.3.0", "Authorization": "Bearer " + token
         })
         try:
             with urlopen(req, timeout=30) as response:

@@ -329,6 +329,44 @@ async function correctManualPunch(db,user,id,request){
   await audit(db,user,'punch.manual_corrected','punch',id,{before:{employee_id:prior.employee_id,timestamp:prior.occurred_at,kind:prior.kind},after:{employee_id:employeeId,timestamp,kind},reason});
   return response({corrected:true,item:{id,employee_id:employeeId,timestamp,kind,source:'manual'}});
 }
+
+/* Administrator-only selective removal of manual test punches.
+   Never touches MB10 raw logs, imported/device events, or nonselected records. */
+async function manualPunchCleanup(db,user,method,request){
+  if(user.role!=='admin')return reject(403,'هذه العملية لمدير النظام فقط');
+  const u=new URL(request.url);
+  const body=method==='POST'?await bodyJson(request):null;
+  const date=str(method==='POST'?body?.date:u.searchParams.get('date'),10);
+  weekdayOf(date);
+  const start=date+' 00:00:00';
+  const next=new Date(date+'T12:00:00Z');
+  next.setUTCDate(next.getUTCDate()+1);
+  const end=next.toISOString().slice(0,10)+' 00:00:00';
+  // SQLite created_at is UTC; compare Yemen local creation day (+03:00).
+  const predicate="p.organization_id=? AND p.source='manual' AND datetime(p.created_at,'+3 hours')>=? AND datetime(p.created_at,'+3 hours')<?";
+  const args=[ORG,start,end];
+  const select="SELECT p.id,p.employee_id,e.name AS employee_name,p.occurred_at AS timestamp,p.kind,p.source,p.created_at FROM punch_events p JOIN employees e ON e.id=p.employee_id WHERE "+predicate;
+  if(method==='GET'){
+    const records=(await db.prepare(select+' ORDER BY p.created_at ASC LIMIT 1001').bind(...args).all()).results||[];
+    if(records.length>1000)return reject(409,'عدد الحركات كبير؛ يرجى مراجعتها إداريًا');
+    return response({date,items:records,timezone:'Asia/Aden',count:records.length,deleted:false});
+  }
+  if(method!=='POST')return reject(405,'إجراء غير مدعوم');
+  const ids=body?.ids;
+  if(body?.confirm!==true||!Array.isArray(ids)||ids.length<1||ids.length>100||new Set(ids).size!==ids.length||ids.some(id=>typeof id!=='string'||!/^[a-zA-Z0-9-]{1,80}$/.test(id)))
+    return reject(400,'حدد الحركات المراد حذفها وأكد الطلب');
+  const selected=(await db.prepare(select+' AND p.id IN ('+ids.map(()=>'?').join(',')+')').bind(...args,...ids).all()).results||[];
+  if(selected.length!==ids.length)return reject(409,'تغيرت القائمة؛ حدثها وراجع الاختيار');
+  const statements=selected.map(row=>db.prepare("DELETE FROM punch_events WHERE id=? AND organization_id=? AND source='manual' AND datetime(created_at,'+3 hours')>=? AND datetime(created_at,'+3 hours')<?")
+    .bind(row.id,ORG,start,end));
+  statements.push(db.prepare('INSERT INTO audit_events(id,organization_id,actor_user_id,event_type,entity_type,entity_id,details_json) VALUES (?,?,?,?,?,?,?)')
+    .bind(uuid(),ORG,user.id,'punch.manual_test_deleted','punch','batch',JSON.stringify({date,timezone:'Asia/Aden',deleted:selected})));
+  // D1 batch executes atomically; inspect affected rows before reporting success.
+  const result=await db.batch(statements);
+  const deleted=result.slice(0,-1).reduce((sum,item)=>sum+(item.meta?.changes||0),0);
+  return response({deleted,requested:ids.length,date,refresh_required:true});
+}
+
 async function settings(db,user,method,request){
   if (method==='GET'){
     const row=await db.prepare('SELECT data_json FROM organization_settings WHERE organization_id=?').bind(ORG).first();
@@ -570,6 +608,7 @@ export async function onRequest(context) {
     if (path==='device-mappings' && ['GET','POST'].includes(method)) return deviceMappings(db,user,method,request);
     if (path==='employees' && ['GET','POST'].includes(method)) return people(db,user,method,null,request);
     if (path.startsWith('employees/') && method==='PUT') return people(db,user,method,path.slice('employees/'.length),request);
+    if (path==='manual-punch-cleanup' && ['GET','POST'].includes(method)) return manualPunchCleanup(db,user,method,request);
     if (path==='punches' && ['GET','POST'].includes(method)) return punches(db,user,method,request);
     if (path.startsWith('punches/') && method==='PUT') return correctManualPunch(db,user,path.slice('punches/'.length),request);
     if (path==='attendance-summary' && method==='GET') return attendanceSummary(db,user,request);

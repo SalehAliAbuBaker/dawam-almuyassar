@@ -624,6 +624,40 @@ async function deviceMappings(db,user,method,request){
 
 
 /* Read-only device attendance review: never writes to punch_events or payroll. */
+
+/* Presentation-only movement status: no changes to raw MB10 or payroll. */
+function safeSchedule(cfg) {
+ const v=(x,f)=>/^([01]\d|2[0-3]):[0-5]\d$/.test(String(x||''))?String(x):f;
+ return {start:v(cfg.start_time,'07:30'),end:v(cfg.end_time,'13:45'),thursday:v(cfg.thursday_end_time,'13:15')};
+}
+function durationDuringShift(from,to,date,sch){
+ const a=punchSeconds(from),b=punchSeconds(to);
+ const start=punchSeconds(date+'T'+sch.start),end=punchSeconds(date+'T'+(weekdayOf(date)===4?sch.thursday:sch.end));
+ return a===null||b===null||weekdayOf(date)===5?0:Math.max(0,Math.round(clippedSeconds(a,b,start,end)/60));
+}
+function classifyDayMovements(items,sch){
+ const groups=new Map();
+ for(const item of items){
+   item.movement_type='review';item.permission_minutes=0;
+   if(!item.employee_id)continue;
+   const time=item.effective_timestamp||item.timestamp||item.occurred_at_device;
+   const key=item.employee_id+'|'+String(time).slice(0,10);
+   if(!groups.has(key))groups.set(key,[]);
+   groups.get(key).push({...item,_time:time,_original:item});
+ }
+ for(const group of groups.values()){
+   group.sort((a,b)=>a._time.localeCompare(b._time)||String(a.event_fingerprint||a.id||'').localeCompare(String(b.event_fingerprint||b.id||'')));
+   for(let i=0;i<group.length;i++){
+     const x=group[i],p=group[i-1],pp=group[i-2],n=group[i+1],date=x._time.slice(0,10);
+     const end=weekdayOf(date)===4?sch.thursday:sch.end;
+     const during=t=>t&&t.slice(11,16)>=sch.start&&t.slice(11,16)<end;
+     const exit=weekdayOf(date)!==5&&x.kind==='out'&&p?.kind==='in'&&n?.kind==='in'&&during(x._time)&&n._time>x._time;
+     const back=weekdayOf(date)!==5&&x.kind==='in'&&p?.kind==='out'&&pp?.kind==='in'&&during(p._time)&&x._time>p._time;
+     x._original.movement_type=exit?'permission_exit':back?'permission_return':x.kind==='in'&&!p?'attendance':x.kind==='out'&&p?.kind==='in'?'departure':'review';
+     if(back)x._original.permission_minutes=durationDuringShift(p._time,x._time,date,sch);
+   }
+ }
+}
 /* Unified read-only attendance register for searching and printing.
    An MB10 raw event is omitted once its corrected/posted event exists. */
 async function attendanceRegister(db,user,request){
@@ -633,7 +667,7 @@ async function attendanceRegister(db,user,request){
  if(dateTo)weekdayOf(dateTo);
  if(dateFrom&&dateTo&&dateFrom>dateTo)return reject(400,'تاريخ البداية بعد تاريخ النهاية');
  const kind=str(p.get('kind'),10),source=str(p.get('source'),12);
- if(kind&&!KINDS.has(kind))return reject(400,'نوع الحركة غير صالح');
+ if(kind&&!KINDS.has(kind)&&kind!=='permission')return reject(400,'نوع الحركة غير صالح');
  if(source&&!['manual','device','import','demo'].includes(source))return reject(400,'مصدر الحركة غير صالح');
  const search=str(p.get('search'),100),employeeId=str(p.get('employee_id'),80);
  const page=Number(p.get('page')||1),pageSize=Number(p.get('page_size')||100);
@@ -654,6 +688,20 @@ async function attendanceRegister(db,user,request){
   "WHERE r.organization_id=? AND r.device_id='mb10-main'",
   "AND NOT EXISTS(SELECT 1 FROM punch_events p WHERE p.organization_id=r.organization_id AND p.device_id=r.device_id AND p.device_event_id=r.event_fingerprint)"
  ].join(' ');
+ const configRow=await db.prepare('SELECT data_json FROM organization_settings WHERE organization_id=?').bind(ORG).first();
+ let config={};try{config=JSON.parse(configRow?.data_json||'{}')}catch{}
+ const sch=safeSchedule(config);
+ const w='PARTITION BY q.employee_id, substr(q.timestamp,1,10) ORDER BY q.timestamp,q.id';
+ const sequence="SELECT q.*,LAG(q.kind) OVER ("+w+") AS previous_kind,LAG(q.kind,2) OVER ("+w+") AS second_previous_kind,"+
+   "LAG(q.timestamp) OVER ("+w+") AS previous_timestamp,LEAD(q.kind) OVER ("+w+") AS next_kind,LEAD(q.timestamp) OVER ("+w+") AS next_timestamp FROM ("+combined+") q";
+ const close="(CASE WHEN strftime('%w',substr(z.timestamp,1,10))='4' THEN '"+sch.thursday+"' ELSE '"+sch.end+"' END)";
+ const exit="z.kind='out' AND z.previous_kind='in' AND z.next_kind='in' AND substr(z.timestamp,12,5)>='"+sch.start+"' AND substr(z.timestamp,12,5)<"+close+" AND z.next_timestamp>z.timestamp";
+ const back="z.kind='in' AND z.previous_kind='out' AND z.second_previous_kind='in' AND substr(z.previous_timestamp,12,5)>='"+sch.start+"' AND substr(z.previous_timestamp,12,5)<"+close+" AND z.timestamp>z.previous_timestamp";
+ const classified="SELECT z.*,CASE WHEN z.employee_id IS NULL OR z.kind NOT IN ('in','out') THEN 'review' "+
+   "WHEN strftime('%w',substr(z.timestamp,1,10))!='5' AND ("+exit+") THEN 'permission_exit' "+
+   "WHEN strftime('%w',substr(z.timestamp,1,10))!='5' AND ("+back+") THEN 'permission_return' "+
+   "WHEN z.kind='in' AND z.previous_kind IS NULL THEN 'attendance' "+
+   "WHEN z.kind='out' AND z.previous_kind='in' THEN 'departure' ELSE 'review' END AS movement_type FROM ("+sequence+") z";
  const filters=[],args=[ORG,ORG];
  if(user.role==='viewer'){filters.push('q.employee_id=?');args.push(user.employee_id||'');}
  if(user.role==='supervisor'){filters.push('q.department=? AND q.employee_id IS NOT NULL');args.push(user.department_scope||'');}
@@ -664,18 +712,20 @@ async function attendanceRegister(db,user,request){
    const next=new Date(dateTo+'T12:00:00Z');next.setUTCDate(next.getUTCDate()+1);
    filters.push('q.timestamp<?');args.push(next.toISOString().slice(0,10)+'T00:00:00');
  }
- if(kind){filters.push('q.kind=?');args.push(kind);}
+ if(kind==='permission')filters.push("q.movement_type IN ('permission_exit','permission_return')");
+ else if(kind){filters.push('q.kind=?');args.push(kind);}
  if(source){filters.push('q.source=?');args.push(source);}
  if(search){
    const like='%'+search.replace(/[\\%_]/g, m=>'\\'+m)+'%';
    filters.push("(q.employee_name LIKE ? ESCAPE '\\' OR q.employee_code LIKE ? ESCAPE '\\' OR q.device_user_id LIKE ? ESCAPE '\\')");
    args.push(like,like,like);
  }
- const base='FROM ('+combined+') q'+(filters.length?' WHERE '+filters.join(' AND '):'');
+ const base='FROM ('+classified+') q'+(filters.length?' WHERE '+filters.join(' AND '):'');
  const countRow=await db.prepare('SELECT COUNT(*) AS n '+base).bind(...args).first();
- const rows=await db.prepare('SELECT q.id,q.employee_id,q.employee_name,q.employee_code,q.timestamp,q.kind,q.source,q.device_user_id,q.device_event_id,q.corrected '+base+
+ const rows=await db.prepare('SELECT q.id,q.employee_id,q.employee_name,q.employee_code,q.timestamp,q.kind,q.source,q.device_user_id,q.device_event_id,q.corrected,q.movement_type,q.previous_timestamp '+base+
    ' ORDER BY q.timestamp DESC,q.id DESC LIMIT ? OFFSET ?').bind(...args,pageSize,(page-1)*pageSize).all();
- return response({items:rows.results||[],total:Number(countRow?.n||0),page,page_size:pageSize,
+ const items=(rows.results||[]).map(r=>({...r,permission_minutes:r.movement_type==='permission_return'&&r.previous_timestamp?durationDuringShift(r.previous_timestamp,r.timestamp,r.timestamp.slice(0,10),sch):0}));
+ return response({items,total:Number(countRow?.n||0),page,page_size:pageSize,
    filters:{from:dateFrom,to:dateTo,source,kind,search,employee_id:employeeId},
    timezone:'Asia/Aden',read_only:true,financial_impact:false});
 }
@@ -706,6 +756,9 @@ async function deviceAttendance(db,user,request){
     matched:!!r.employee_id,
     requires_review:!r.employee_id||(!r.correction_id&&![0,1].includes(r.punch_code))
   }));
+  const cfgRow=await db.prepare('SELECT data_json FROM organization_settings WHERE organization_id=?').bind(ORG).first();
+  let cfg={};try{cfg=JSON.parse(cfgRow?.data_json||'{}')}catch{}
+  classifyDayMovements(result,safeSchedule(cfg));
   return response({date,items:result,matched_count:result.filter(r=>r.matched).length,
     unmatched_count:result.filter(r=>!r.matched).length,
     review_count:result.filter(r=>r.requires_review).length,

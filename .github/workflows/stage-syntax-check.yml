@@ -1,0 +1,46 @@
+name: Dawam staging syntax checks
+on:
+  push:
+    branches:
+      - feature/dawam-0.2.0-foundation
+  workflow_dispatch:
+jobs:
+  parse-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check application and Cloudflare function syntax
+        run: |
+          node --check "functions/api/[[path]].js"
+          node --check "functions/_middleware.js"
+          node --check "functions/api/device-import.js"
+          node --check "app-integration.js"
+          python3 - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+          import subprocess, tempfile
+          class Scripts(HTMLParser):
+              def __init__(self): super().__init__(); self.inside=False; self.parts=[]; self.scripts=[]
+              def handle_starttag(self, tag, attrs):
+                  if tag=='script':
+                      self.inside='src' not in dict(attrs)
+                      self.parts=[]
+              def handle_data(self, data):
+                  if self.inside:self.parts.append(data)
+              def handle_endtag(self, tag):
+                  if tag=='script' and self.inside:
+                      self.scripts.append(''.join(self.parts))
+                      self.inside=False
+          for page in ['users-permissions.html','my-attendance.html']:
+              parser=Scripts()
+              parser.feed(Path(page).read_text(encoding='utf8'))
+              assert parser.scripts, f'{page}: no inline script'
+              for script in parser.scripts:
+                  with tempfile.NamedTemporaryFile(mode='w',suffix='.mjs') as f:
+                      f.write(script);f.flush()
+                      subprocess.run(['node','--check',f.name],check=True)
+              print(f'{page}: {len(parser.scripts)} inline scripts parsed')
+          PY

@@ -373,6 +373,7 @@ function attendanceDay(events,dateText,config,employee=null,canSeeFinancial=fals
  const ordered=events.filter(e=>e.timestamp.slice(0,10)===dateText).sort((a,b)=>a.timestamp.localeCompare(b.timestamp));
  let firstIn=null,firstSecond=null,activeIn=null,lastOut=null,workSeconds=0,dutySeconds=0,absenceSeconds=0;
  const absencePeriods=[],issues=[];
+ if(ordered.some(e=>e.source==='device'))issues.push('device_classification_requires_review');
  for(const event of ordered){
    const second=punchSeconds(event.timestamp);
    if(second===null){issues.push('invalid_timestamp');continue}

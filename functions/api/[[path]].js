@@ -356,7 +356,15 @@ async function correctDevicePunch(db,user,request){
    .bind(ORG,fingerprint).first();
  const old=existing?{employee_id:existing.employee_id,timestamp:existing.occurred_at,kind:existing.kind}:
    {device_user_id:raw.device_user_id,timestamp:raw.occurred_at_device,punch_code:raw.punch_code};
- if(existing&&existing.employee_id===employeeId&&existing.occurred_at===timestamp&&existing.kind===kind)return reject(400,'لم تتغير بيانات الحركة');
+ // The underlying raw event never changes; reject no-op corrections and require
+ // confirmation of the snapshot the administrator actually reviewed.
+ const originalEmployee=await db.prepare('SELECT id FROM employees WHERE organization_id=? AND device_user_id=?').bind(ORG,raw.device_user_id).first();
+ const currentEmployee=existing?.employee_id||originalEmployee?.id||null;
+ const currentTimestamp=existing?.occurred_at||raw.occurred_at_device;
+ const currentKind=existing?.kind||(raw.punch_code===0?'in':raw.punch_code===1?'out':'other');
+ if(currentEmployee===employeeId&&currentTimestamp===timestamp&&currentKind===kind)return reject(400,'لم تتغير بيانات الحركة');
+ if(!b.original||b.original.employee_id!==currentEmployee||b.original.timestamp!==currentTimestamp||b.original.kind!==currentKind)
+   return reject(409,'تغيرت الحركة أو بيانات العامل؛ حدّث القائمة وراجع التصحيح');
  const auditStmt=db.prepare('INSERT INTO audit_events(id,organization_id,actor_user_id,event_type,entity_type,entity_id,details_json) VALUES (?,?,?,?,?,?,?)')
    .bind(uuid(),ORG,user.id,'punch.device_corrected','punch',fingerprint,JSON.stringify({before:old,after:{employee_id:employeeId,timestamp,kind},reason}));
  if(existing){

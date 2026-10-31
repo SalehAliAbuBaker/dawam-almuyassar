@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {webcrypto,createHmac,randomBytes} from 'node:crypto';
-import {makePushRequest,validatePushSubscription} from '../functions/api/push-web.js';
+import {makePushRequest,validatePushSubscription} from '../lib/push-web.js';
 const crypto=webcrypto, subtle=crypto.subtle;
 const b64=x=>Buffer.from(x).toString('base64url');
 const raw=s=>new Uint8Array(Buffer.from(s,'base64url'));

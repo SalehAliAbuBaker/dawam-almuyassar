@@ -75,11 +75,15 @@ export async function notifyWorkersAfterSuccessfulSync(db,env){
  const close=thursday?13*60+15:13*60+45;
  if(clock.minutes<7*60+45)return {skipped:'before_reminder_window'};
  // Small batch per sync: bounds outbound fetches and D1 queries in a Worker invocation.
- const subs=await db.prepare("SELECT s.id,s.employee_id,s.endpoint,s.p256dh,s.auth_secret FROM push_subscriptions s JOIN users u ON u.id=s.user_id AND u.organization_id=s.organization_id JOIN employees e ON e.id=s.employee_id AND e.organization_id=s.organization_id WHERE s.organization_id=? AND u.is_active=1 AND u.employee_id=s.employee_id AND e.status='active' ORDER BY s.created_at LIMIT 20")
+ const subs=await db.prepare("SELECT s.id,s.employee_id,s.endpoint,s.p256dh,s.auth_secret FROM push_subscriptions s JOIN users u ON u.id=s.user_id AND u.organization_id=s.organization_id JOIN employees e ON e.id=s.employee_id AND e.organization_id=s.organization_id WHERE s.organization_id=? AND u.is_active=1 AND u.employee_id=s.employee_id AND e.status='active' AND e.type='regular' ORDER BY s.created_at LIMIT 20")
    .bind(org).all();
  const subscriptions=subs.results||[],cache=new Map();
  for(const s of subscriptions){
   if(!validatePushSubscription(pack(s)))continue;
+  // Approved full-day leave is not an attendance failure; skip reminders.
+  const leave=await db.prepare("SELECT 1 FROM leave_requests WHERE organization_id=? AND employee_id=? AND status='approved' AND leave_type IN ('annual','sick','emergency','other') AND substr(starts_at,1,10)<=? AND substr(ends_at,1,10)>=? AND (minutes IS NULL OR minutes>=360) LIMIT 1")
+    .bind(org,s.employee_id,clock.day,clock.day).first();
+  if(leave)continue;
   if(!cache.has(s.employee_id))cache.set(s.employee_id,await dailyEvents(db,s.employee_id,clock.day));
   const events=cache.get(s.employee_id),firstIn=events.find(x=>x.kind==='in');
   if(!firstIn){

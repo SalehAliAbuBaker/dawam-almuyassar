@@ -46,7 +46,7 @@ test('rejects local/private/HTTP endpoints before fetch',()=>{
  for(const endpoint of [
   'http://fcm.googleapis.com/fcm/send/unsafe','https://127.0.0.1/',
   'https://localhost/','https://evil.invalid/push','https://fcm.googleapis.com.evil.invalid/',
-  'https://fcm.googleapis.com:443/fcm/send/unsafe'
+  'https://user:pass@fcm.googleapis.com/fcm/send/unsafe'
  ]){
   assert.equal(validatePushSubscription({endpoint,keys:{p256dh:b64(Buffer.concat([Buffer.from([4]),Buffer.alloc(64)])),auth:b64(Buffer.alloc(16))}}),false,endpoint);
  }

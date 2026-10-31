@@ -22,7 +22,15 @@ button:disabled{opacity:.48;cursor:not-allowed}
 table{border-collapse:collapse;width:100%;font-size:.91rem;white-space:nowrap;text-align:right}
 th{background:#e6f1e8}th,td{border-bottom:1px solid #e4ebe5;padding:9px 12px}
 tbody tr:hover{background:#f6faf7}
-.flag{color:#976214}.review{color:#a12121}.pager{display:flex;gap:10px;justify-content:center;align-items:center;padding:15px}
+.flag{color:#976214}.review{color:#a12121}
+.movement-tag{display:inline-block;padding:4px 10px;border-radius:15px;font-weight:700;font-size:.85rem;white-space:nowrap}
+.movement-tag.attendance{color:#08783e;background:#e0f6e8}
+.movement-tag.departure{color:#ac2424;background:#ffebeb}
+.movement-tag.permission_exit,.movement-tag.permission_return{color:#965408;background:#fff0d5}
+.movement-tag.review{color:#665a4a;background:#efede9}
+.legend{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 12px}
+@media print{.movement-tag{-webkit-print-color-adjust:exact;print-color-adjust:exact;border:1px solid currentColor}.report-table td .movement-tag.attendance{color:#08783e!important}.report-table td .movement-tag.departure{color:#ac2424!important}.report-table td .movement-tag.permission_exit,.report-table td .movement-tag.permission_return{color:#965408!important}}
+.pager{display:flex;gap:10px;justify-content:center;align-items:center;padding:15px}
 dialog{width:min(1080px,calc(100vw - 20px));max-height:92vh;border:1px solid #ccddd1;border-radius:12px;padding:12px}
 dialog::backdrop{background:#102a1ca8}.preview-content{background:#fff;padding:12px;overflow:auto;max-height:66vh}
 .report-table{white-space:normal}.report-table td,.report-table th{font-size:.82rem;vertical-align:top}
@@ -51,13 +59,14 @@ body.embedded .pager{padding-bottom:24px}
 <label>بحث ذكي (اسم، رقم عامل، رقم بصمة)<input id="search" placeholder="اكتب اسمًا أو رقمًا" autocomplete="off"></label>
 <label>من تاريخ<input type="date" id="from"></label><label>إلى تاريخ<input type="date" id="to"></label>
 <label>العامل<select id="employee"><option value="">جميع العاملين</option></select></label>
-<label>نوع الحركة<select id="kind"><option value="">جميع الحركات</option><option value="in">دخول</option><option value="out">خروج</option><option value="other">غير محدد</option></select></label>
+<label>نوع الحركة<select id="kind"><option value="">جميع الحركات</option><option value="in">دخول</option><option value="out">انصراف</option><option value="permission">استعذار أثناء الدوام</option><option value="other">غير محدد</option></select></label>
 <label>المصدر<select id="source"><option value="">جميع المصادر</option><option value="device">جهاز MB10</option><option value="manual">يدوي</option><option value="import">استيراد</option><option value="demo">تجريبي</option></select></label>
 </div>
 <div class="actions"><button id="apply">عرض النتائج</button><button id="reset" class="secondary">إلغاء الفلاتر</button></div>
 <div id="status" class="status" role="status">اختر خيارات البحث ثم اضغط «عرض النتائج».</div>
 </section>
 <section class="panel">
+<div class="legend" aria-label="دليل ألوان الحركات"><span class="movement-tag attendance">● حضور</span><span class="movement-tag departure">● انصراف</span><span class="movement-tag permission_exit">● استعذار: خروج وعودة</span><span class="movement-tag review">● بحاجة إلى مراجعة</span></div>
 <div class="stat"><span id="total">عدد الحركات: —</span><span id="shown">المعروض: —</span><span id="pageText">صفحة 1</span></div>
 <div class="actions">
 <button id="previewBtn">معاينة التقرير</button>
@@ -88,7 +97,7 @@ if(embedded){
  setTimeout(reportHeight,150);
 }
 
-const kinds={in:'دخول',out:'خروج',other:'غير محدد'},sources={device:'جهاز MB10',manual:'يدوي',import:'استيراد',demo:'تجريبي'};
+const kinds={in:'حضور',out:'انصراف',permission:'استعذار',other:'غير محدد'},sources={device:'جهاز MB10',manual:'يدوي',import:'استيراد',demo:'تجريبي'};
 let page=1,total=0,list=[],loading=false,lastFilters=null;
 const PAGE_SIZE=100,EXPORT_LIMIT=5000;
 function message(text,bad=false){$('status').textContent=text;$('status').className='status'+(bad?' error':'')}
@@ -102,9 +111,12 @@ async function api(url){let res;try{res=await fetch(url,{credentials:'same-origi
 function td(row,value){const cell=document.createElement('td');cell.textContent=value==null?'':String(value);row.append(cell);return cell}
 function formatDate(item){return (item.timestamp||'').slice(0,10)}
 function formatTime(item){return (item.timestamp||'').slice(11,19)}
-function itemStatus(item){return !item.employee_id?'غير مطابق':item.kind==='other'?'بحاجة إلى مراجعة':item.corrected?'مصححة':'مسجلة'}
+function itemStatus(item){if(!item.employee_id)return 'غير مطابق';if(item.movement_type==='review'||item.kind==='other')return 'بحاجة إلى مراجعة';if(item.movement_type==='permission_return')return 'استعذار '+Number(item.permission_minutes||0)+' دقيقة'+(item.corrected?' — مصححة':'');return item.corrected?'مصححة':'مسجلة'}
+const movementLabels={attendance:'حضور',departure:'انصراف',permission_exit:'استعذار — خروج مؤقت',permission_return:'استعذار — عودة',review:'بحاجة إلى مراجعة'};
+function movementLabel(item){return movementLabels[item.movement_type]||kinds[item.kind]||'غير محدد'}
+function movementCell(row,item){const el=td(row,'');const tag=document.createElement('span');tag.className='movement-tag '+(item.movement_type||'review');tag.textContent=movementLabel(item);el.append(tag)}
 function itemName(item){return item.employee_name||'غير مطابق'}
-function makeRow(item,n){const tr=document.createElement('tr');td(tr,n);td(tr,itemName(item));td(tr,item.employee_code||'—');td(tr,item.device_user_id||'—');td(tr,formatDate(item));td(tr,formatTime(item));td(tr,kinds[item.kind]||'غير محدد');td(tr,sources[item.source]||item.source);td(tr,itemStatus(item));return tr}
+function makeRow(item,n){const tr=document.createElement('tr');td(tr,n);td(tr,itemName(item));td(tr,item.employee_code||'—');td(tr,item.device_user_id||'—');td(tr,formatDate(item));td(tr,formatTime(item));movementCell(tr,item);td(tr,sources[item.source]||item.source);td(tr,itemStatus(item));return tr}
 async function load(resetPage=true){if(loading)return;if(resetPage)page=1;const f=readFilters();if(f.from&&f.to&&f.from>f.to){message('تاريخ البداية لا يمكن أن يكون بعد تاريخ النهاية.',true);return}
 loading=true;$('apply').disabled=true;message('جاري قراءة الحركات...');
 try{const data=await api('/api/attendance-register?'+params(page,PAGE_SIZE,f));lastFilters=f;total=data.total;list=data.items||[];const body=$('rows');body.replaceChildren();if(!list.length){const tr=document.createElement('tr');const empty=td(tr,'لا توجد حركات مطابقة للبحث');empty.colSpan=9;body.append(tr)}
@@ -133,7 +145,7 @@ $('previewBtn').onclick=()=>preview(false);$('printBtn').onclick=()=>preview(tru
 $('close').onclick=()=>$('previewDialog').close();$('doPrint').onclick=()=>window.print();
 function csvEscape(value){let text=String(value==null?'':value);if(/^\s*[=+\-@]/.test(text))text="'"+text;return '"'+text.replace(/"/g,'""')+'"'}
 function makeCsv(items){const headings=['م','العامل','رقم العامل','رقم البصمة','التاريخ','الوقت','الحركة','المصدر','الحالة'];const output=[headings];
-items.forEach((r,i)=>output.push([i+1,itemName(r),r.employee_code||'',r.device_user_id||'',formatDate(r),formatTime(r),kinds[r.kind]||'غير محدد',sources[r.source]||r.source,itemStatus(r)]));
+items.forEach((r,i)=>output.push([i+1,itemName(r),r.employee_code||'',r.device_user_id||'',formatDate(r),formatTime(r),movementLabel(r),sources[r.source]||r.source,itemStatus(r)]));
 return '\uFEFF'+output.map(row=>row.map(csvEscape).join(',')).join('\r\n')}
 $('shareBtn').onclick=async()=>{$('shareBtn').disabled=true;message('جاري إعداد ملف المشاركة...');
 try{const d=await fetchReport(),content=makeCsv(d.items),filename='dawam-attendance-'+todayAden()+'.csv';

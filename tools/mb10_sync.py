@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime
@@ -39,8 +40,11 @@ def main():
     parser.add_argument('--port', type=int, default=4370)
     parser.add_argument('--from-date', help='YYYY-MM-DD; only export movements from this date')
     parser.add_argument('--upload', action='store_true', help='Send raw punches to configured HTTPS stage API')
+    parser.add_argument('--agent', action='store_true', help='Listen for requests from Dawam app')
     args = parser.parse_args()
     password = int(os.environ.get('MB10_COM_PASSWORD', '0'))
+    if args.agent:
+        return agent(args, password)
     items = collect(args.ip, args.port, password)
     if args.from_date:
         datetime.strptime(args.from_date, '%Y-%m-%d')
@@ -70,6 +74,48 @@ def main():
         total += result.get('inserted', 0)
         duplicates += result.get('duplicates', 0)
     print(f'Upload completed. New: {total}; existing: {duplicates}; selected: {len(items)}')
+
+def request_json(base, token, suffix, payload=None):
+    data = json.dumps(payload).encode('utf-8') if payload is not None else None
+    req = urllib.request.Request(base + '/api/' + suffix, data=data,
+        headers={'Authorization':'Bearer '+token, 'Content-Type':'application/json'},
+        method='POST' if data is not None else 'GET')
+    with urllib.request.urlopen(req, timeout=35) as response:
+        return json.load(response)
+
+def agent(args, password):
+    base=os.environ.get('DAWAM_STAGE_URL','').rstrip('/')
+    token=os.environ.get('MB10_IMPORT_TOKEN','')
+    if not base.startswith('https://') or len(token)<32:
+        raise SystemExit('Missing DAWAM_STAGE_URL (https) / MB10_IMPORT_TOKEN (32+ chars)')
+    print('MB10 sync agent is running. Keep this window open. Ctrl+C to stop.',flush=True)
+    while True:
+        job_id=None
+        try:
+            data=request_json(base,token,'mb10-agent')
+            job=(data.get('job') or {})
+            job_id=job.get('id')
+            if job_id:
+                print('Sync requested:',job_id,flush=True)
+                items=collect(args.ip,args.port,password)
+                inserted=duplicates=0
+                for offset in range(0,len(items),100):
+                    result=request_json(base,token,'device-import',{'items':items[offset:offset+100]})
+                    inserted+=result.get('inserted',0)
+                    duplicates+=result.get('duplicates',0)
+                request_json(base,token,'mb10-agent',{'id':job_id,'status':'success','inserted':inserted,'duplicates':duplicates})
+                print('Done; new:',inserted,'duplicates:',duplicates,flush=True)
+        except KeyboardInterrupt:
+            print('Agent stopped.')
+            return
+        except Exception as exc:
+            print('Sync error:',type(exc).__name__,str(exc)[:200],flush=True)
+            if job_id:
+                try:
+                    request_json(base,token,'mb10-agent',{'id':job_id,'status':'error','error':str(exc)[:200]})
+                except Exception:
+                    pass
+        time.sleep(5)
 
 if __name__ == '__main__':
     try:

@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>دوامي وتنبيهاتي | دوام الميسر</title>
+<style>
+:root{font-family:Tahoma,Arial,sans-serif;color:#153d2b;background:#f4f7f5;font-size:15px}
+*{box-sizing:border-box}body{margin:0}main{max-width:820px;margin:20px auto;padding:18px}
+header,.panel{background:#fff;border:1px solid #e1e9e2;border-radius:16px;padding:17px;margin-bottom:14px}
+h1{font-size:1.35rem;margin:0 0 7px}h2{font-size:1.1rem;margin:0 0 14px}
+p{line-height:1.75}small,.hint{color:#627568}a{color:#08673d}button,select,input,textarea{font:inherit;border-radius:10px;padding:10px;border:1px solid #bac9c0;max-width:100%}
+button{cursor:pointer;background:#087546;color:#fff;border:0}button:disabled{opacity:.5}input,textarea,select{background:#fff;color:inherit}
+textarea{width:100%;min-height:90px;resize:vertical}label{display:block;margin:10px 0 5px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.row>*{flex:0 1 auto}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.stat{background:#f4f8f4;border-radius:10px;padding:12px}.stat strong{display:block;font-size:1.07rem;margin-top:6px}
+.alert{border-radius:12px;padding:12px 14px;margin:8px 0;border-right:5px solid #9aac9e;background:#f4f8f5}
+.alert.warning{border-color:#b45309;background:#fff6e8}.alert.info{border-color:#356d9c;background:#f1f7fc}
+.alert.success{border-color:#087546;background:#ecf8f0}
+.alert b{display:block;margin-bottom:4px}.alert p{margin:0}
+.state{padding:10px;background:#eaf3ed;border-radius:10px;white-space:pre-wrap;margin:10px 0}
+.hidden{display:none}button.secondary{background:#eaf4ec;color:#165237}
+</style></head><body><main>
+<header><h1>دوامي وتنبيهاتي</h1><small>دوام الميسر — 0.2.13 · بياناتي الشخصية فقط</small>
+<p class="hint">متابعة الحضور والانصراف والتنبيه عند عدم ظهور بصمة بعد المزامنة، مع إمكانية إرسال بلاغ للمراجعة.</p>
+<div class="row"><a href="./">العودة للتطبيق</a><span id="identity"></span></div>
+</header>
+<section class="panel"><div class="row"><label for="date">التاريخ</label><input type="date" id="date"><button id="load">تحديث الحالة</button><button id="notify" class="secondary">تفعيل التنبيه أثناء فتح الصفحة</button></div>
+<p class="hint">لا يعتبر عدم ظهور البصمة دليلًا على فشل قارئ الجهاز، ولا يترتب عليه خصم تلقائي.</p><div id="message" class="state">جارٍ التحقق من تسجيل الدخول...</div>
+<div id="sync" class="hint"></div></section>
+<section class="panel hidden" id="details"><h2>حالة دوامي</h2><div class="grid" id="stats"></div></section>
+<section class="panel"><h2>التنبيهات</h2><div id="alerts"></div></section>
+<section class="panel"><h2>إبلاغ الإدارة عن مشكلة تبصيم</h2>
+<p class="hint">يسجل البلاغ في سجل مراجعة الإدارة، ولا ينشئ بصمة ولا يغير الراتب أو الخصومات.</p>
+<label for="kind">نوع المشكلة</label><select id="kind"><option value="checkin">لم تظهر بصمة الحضور</option><option value="checkout">لم تظهر بصمة الانصراف</option><option value="scan_failed">فشل قارئ البصمة عند المحاولة</option><option value="other">مشكلة أخرى</option></select>
+<label for="detail">تفاصيل البلاغ</label><textarea id="detail" maxlength="500" placeholder="اذكر وقت محاولة التبصيم والمشكلة التي ظهرت لك (8 أحرف على الأقل)"></textarea>
+<div class="row"><button id="send">إرسال البلاغ للمراجعة</button></div><p id="report" role="status"></p></section>
+</main>
+<script>
+'use strict';
+const $=id=>document.getElementById(id),date=$('date'),message=$('message'),alerts=$('alerts');
+let previousWarnings='',notificationsEnabled=false,loadedToday='';
+async function api(url,opts={}){
+ const response=await fetch('/api/'+url,{credentials:'same-origin',cache:'no-store',...opts});
+ const result=await response.json().catch(()=>({}));
+ if(!response.ok)throw Error(result.error||('تعذر الوصول للخادم ('+response.status+')'));
+ return result;
+}
+function addText(parent,tag,value,css){
+ const node=document.createElement(tag);if(css)node.className=css;
+ node.textContent=String(value??'—');parent.append(node);return node;
+}
+function fmt(time){return time?time.slice(11,16):'—'}
+function setStats(day){
+ $('stats').replaceChildren();
+ for(const [label,value] of [
+   ['أول حضور',fmt(day.first_in)],['آخر انصراف',fmt(day.last_out)],
+   ['دقائق التأخر',day.late_minutes??0],['دقائق الاستعذار',day.absence_minutes??0],
+   ['دقائق الخروج المبكر',day.early_exit_minutes??0],
+   ['حالة الحضور',({completed:'مكتمل',missing_checkout:'انصراف غير مؤكد',no_checkin:'لا توجد بصمة حضور',weekly_off:'إجازة أسبوعية'})[day.status]||day.status]
+ ]){
+  const box=addText($('stats'),'div',label,'stat');addText(box,'strong',value);
+ }
+ $('details').classList.remove('hidden');
+}
+async function load(){
+ $('load').disabled=true;message.textContent='جارٍ فحص السجل الشخصي...';
+ try{
+  const query=date.value?'?date='+encodeURIComponent(date.value):'';
+  const data=await api('my-attendance'+query);
+  if(!date.value && data.today)date.value=data.today;
+  loadedToday=data.today||'';
+  $('identity').textContent=data.linked?'العامل: '+data.employee.name+' · '+data.employee.code:'';
+  alerts.replaceChildren();
+  for(const a of data.alerts||[]){
+    const el=addText(alerts,'div','','alert '+(a.level||'info'));
+    addText(el,'b',a.title);addText(el,'p',a.message);
+  }
+  if(data.linked){
+    setStats(data.summary);
+    const sync=data.last_sync;
+    $('sync').textContent=sync?'آخر حالة مزامنة: '+({done:'مكتملة',error:'فشلت',running:'قيد التشغيل',pending:'بانتظار المعالجة'})[sync.state]+' · '+(sync.finished_at||'غير متوفر'):'لا توجد معلومات عن آخر مزامنة';
+    message.textContent='الحركات المعروضة من السجلات المتاحة، وقد تتأخر بصمات الجهاز حتى وصول المزامنة.';
+  }else{
+    $('details').classList.add('hidden');
+    $('sync').textContent='';
+    message.textContent='يجب ربط هذا الحساب بسجل العامل بواسطة مدير النظام.';
+  }
+  const warnings=(data.alerts||[]).filter(a=>a.level==='warning').map(a=>a.code).sort().join('|');
+  const key=(data.date||'')+'|'+warnings;
+  if(notificationsEnabled&&date.value===loadedToday&&warnings&&previousWarnings!==key&&'Notification' in window&&Notification.permission==='granted'){
+    try{new Notification('دوام الميسر — مراجعة البصمة',{body:(data.alerts||[]).filter(a=>a.level==='warning').map(a=>a.title).join('، ')})}catch(_){}
+  }
+  previousWarnings=key;
+ }catch(e){
+  message.textContent='تعذر تحديث بياناتك: '+e.message+'\nإذا انقطع الاتصال، فلا يُعد ذلك دليلًا على إخفاق التبصيم.';
+  alerts.replaceChildren();$('sync').textContent='';
+  $('details').classList.add('hidden');
+ }finally{$('load').disabled=false}
+}
+$('load').addEventListener('click',load);
+$('notify').addEventListener('click',async()=>{
+ if(!('Notification' in window)){message.textContent='المتصفح لا يدعم إشعارات النظام؛ ستظل التنبيهات ظاهرة داخل الصفحة.';return}
+ const permission=await Notification.requestPermission();
+ notificationsEnabled=permission==='granted';
+ $('notify').textContent=notificationsEnabled?'التنبيه مفعل أثناء فتح الصفحة':'تعذر تفعيل إشعارات المتصفح';
+});
+$('send').addEventListener('click',async()=>{
+ $('report').textContent='';
+ const detail=$('detail').value.trim();
+ if(!date.value||detail.length<8){$('report').textContent='حدد التاريخ واكتب وصفًا من 8 أحرف على الأقل.';return}
+ $('send').disabled=true;
+ try{
+  const r=await api('my-punch-report',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({date:date.value,kind:$('kind').value,detail})});
+  $('report').textContent=r.message||'تم تسجيل البلاغ للمراجعة.';
+  $('detail').value='';
+ }catch(e){$('report').textContent='لم يُحفظ البلاغ: '+e.message}
+ finally{$('send').disabled=false}
+});
+date.addEventListener('change',load);
+load();
+setInterval(()=>{if(!document.hidden&&(!date.value||date.value===loadedToday))load()},60000);
+</script></body></html>

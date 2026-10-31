@@ -98,7 +98,7 @@ if(embedded){
 }
 
 const kinds={in:'حضور',out:'انصراف',permission:'استعذار',other:'غير محدد'},sources={device:'جهاز MB10',manual:'يدوي',import:'استيراد',demo:'تجريبي'};
-let page=1,total=0,list=[],loading=false,lastFilters=null;
+let page=1,total=0,list=[],loading=false,lastFilters=null,canCorrectDevice=false;
 const PAGE_SIZE=100,EXPORT_LIMIT=5000;
 function message(text,bad=false){$('status').textContent=text;$('status').className='status'+(bad?' error':'')}
 function todayAden(){const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Aden',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const d=Object.fromEntries(parts.map(x=>[x.type,x.value]));return d.year+'-'+d.month+'-'+d.day}
@@ -111,16 +111,16 @@ async function api(url){let res;try{res=await fetch(url,{credentials:'same-origi
 function td(row,value){const cell=document.createElement('td');cell.textContent=value==null?'':String(value);row.append(cell);return cell}
 function formatDate(item){return (item.timestamp||'').slice(0,10)}
 function formatTime(item){return (item.timestamp||'').slice(11,19)}
-function itemStatus(item){if(!item.employee_id)return 'غير مطابق';if(item.movement_type==='review'||item.kind==='other')return 'بحاجة إلى مراجعة';if(item.movement_type==='permission_return')return 'استعذار '+Number(item.permission_minutes||0)+' دقيقة'+(item.corrected?' — مصححة':'');return item.corrected?'مصححة':'مسجلة'}
+function itemStatus(item){if(!item.employee_id)return 'غير مطابق';if(item.movement_type==='review'||item.kind==='other')return 'بحاجة إلى مراجعة: '+(item.review_reason||'تسلسل الحركة غير مكتمل');if(item.movement_type==='permission_return')return 'استعذار '+Number(item.permission_minutes||0)+' دقيقة'+(item.corrected?' — مصححة':'');return item.corrected?'مصححة':'مسجلة'}
 const movementLabels={attendance:'حضور',departure:'انصراف',permission_exit:'استعذار — خروج مؤقت',permission_return:'استعذار — عودة',review:'بحاجة إلى مراجعة'};
 function movementLabel(item){return movementLabels[item.movement_type]||kinds[item.kind]||'غير محدد'}
 function movementCell(row,item){const el=td(row,'');const tag=document.createElement('span');tag.className='movement-tag '+(item.movement_type||'review');tag.textContent=movementLabel(item);el.append(tag)}
 function itemName(item){return item.employee_name||'غير مطابق'}
-function makeRow(item,n){const tr=document.createElement('tr');td(tr,n);td(tr,itemName(item));td(tr,item.employee_code||'—');td(tr,item.device_user_id||'—');td(tr,formatDate(item));td(tr,formatTime(item));movementCell(tr,item);td(tr,sources[item.source]||item.source);td(tr,itemStatus(item));return tr}
+function makeRow(item,n,interactive=false){const tr=document.createElement('tr');td(tr,n);td(tr,itemName(item));td(tr,item.employee_code||'—');td(tr,item.device_user_id||'—');td(tr,formatDate(item));td(tr,formatTime(item));movementCell(tr,item);td(tr,sources[item.source]||item.source);const status=td(tr,itemStatus(item));if(interactive&&canCorrectDevice&&item.source==='device'&&item.movement_type==='review'&&item.device_event_id){const link=document.createElement('a');link.textContent='تصحيح الحركة';link.href='/manage-punches.html?date='+encodeURIComponent(formatDate(item))+'&fingerprint='+encodeURIComponent(item.device_event_id);link.style.marginInlineStart='9px';status.append(' — ',link)}return tr}
 async function load(resetPage=true){if(loading)return;if(resetPage)page=1;const f=readFilters();if(f.from&&f.to&&f.from>f.to){message('تاريخ البداية لا يمكن أن يكون بعد تاريخ النهاية.',true);return}
 loading=true;$('apply').disabled=true;message('جاري قراءة الحركات...');
 try{const data=await api('/api/attendance-register?'+params(page,PAGE_SIZE,f));lastFilters=f;total=data.total;list=data.items||[];const body=$('rows');body.replaceChildren();if(!list.length){const tr=document.createElement('tr');const empty=td(tr,'لا توجد حركات مطابقة للبحث');empty.colSpan=9;body.append(tr)}
-else list.forEach((r,i)=>body.append(makeRow(r,(page-1)*PAGE_SIZE+i+1)));
+else list.forEach((r,i)=>body.append(makeRow(r,(page-1)*PAGE_SIZE+i+1,true)));
 $('total').textContent='عدد الحركات: '+total;$('shown').textContent='المعروض: '+list.length;$('pageText').textContent='الصفحة '+page+' من '+Math.max(1,Math.ceil(total/PAGE_SIZE));$('pageIndex').textContent=String(page);
 $('prev').disabled=page<=1;$('next').disabled=page*PAGE_SIZE>=total;
 message('تم عرض '+list.length+' حركة من '+total+' حركة مطابقة.')}catch(e){message(e.message,true)}finally{loading=false;$('apply').disabled=false}}
@@ -152,5 +152,6 @@ try{const d=await fetchReport(),content=makeCsv(d.items),filename='dawam-attenda
 const file=new File([content],filename,{type:'text/csv;charset=utf-8'});if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:'دوام الميسر — كشف الحضور والبصمة'});message('تم فتح قائمة المشاركة.')}
 else{const blob=new Blob([content],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);message('الجهاز لا يدعم مشاركة الملف مباشرة؛ تم تنزيل كشف CSV لمشاركته يدويًا.')}
 }catch(e){if(e.name!=='AbortError')message(e.message,true)}finally{$('shareBtn').disabled=false}};
-loadEmployees();load(true);
+async function initialize(){try{const data=await api('/api/me');canCorrectDevice=['admin','hr'].includes(data.user?.role)}catch{}loadEmployees();load(true)}
+initialize();
 </script></body></html>

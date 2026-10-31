@@ -1,9 +1,101 @@
-<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>إدارة المستخدمين والصلاحيات | دوام الميسر</title><style>body{font-family:Tahoma,Arial,sans-serif;background:#f6f8f5;color:#173d2b;margin:0;padding:16px}main{max-width:760px;margin:20px auto;background:#fff;padding:22px;border-radius:18px;box-shadow:0 4px 24px #0001}h1{font-size:1.4rem}select,button{padding:12px;border-radius:9px;font:inherit}select{border:1px solid #abb9ae;max-width:100%}button{background:#14784d;color:white;border:0;cursor:pointer}button:disabled{opacity:.5}article{padding:12px 0;border-bottom:1px solid #e5eae6;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.msg{background:#eef5ef;padding:12px;border-radius:10px;white-space:pre-wrap}small{color:#61766a}a{color:#14784d}</style></head><body><main><h1>إدارة المستخدمين والصلاحيات</h1><small>دوام الميسر — 0.2.12 (صلاحيات تجريبية)</small><p>حدد المستخدم ثم عدّل صلاحياته المحفوظة. «افتراضي» يعيد حكم الدور الأساسي.</p><div class="msg" id="msg">جارٍ التحقق من تسجيل الدخول...</div><p><label for="user">المستخدم: </label><select id="user" disabled></select></p><section id="items"></section><p><button id="save" disabled>حفظ الصلاحيات</button> <button id="reload" type="button">إعادة تحميل</button></p><p><a href="./">العودة إلى التطبيق</a></p></main><script>
+<!doctype html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>إدارة المستخدمين والصلاحيات | دوام الميسر</title>
+<style>
+*{box-sizing:border-box}body{font-family:Tahoma,Arial,sans-serif;background:#f5f8f5;color:#173d2b;margin:0;padding:16px}
+main{max-width:800px;margin:20px auto;background:#fff;padding:22px;border-radius:18px;box-shadow:0 4px 24px #0001}
+h1{font-size:1.45rem}h2{font-size:1.1rem;margin:22px 0 10px}
+label{display:block;margin:12px 0 5px;font-weight:bold}select,button,input{padding:11px;border-radius:9px;font:inherit}
+select,input{border:1px solid #abb9ae;max-width:100%;background:#fff;color:inherit}
+select{min-width:min(350px,100%)}button{background:#14784d;color:white;border:0;cursor:pointer}
+button:disabled{opacity:.5}button.secondary{background:#edf4ef;color:#205e3c}
+article{padding:12px 0;border-bottom:1px solid #e5eae6;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.msg{background:#eef5ef;padding:12px;border-radius:10px;white-space:pre-wrap;line-height:1.7}small,.hint{color:#61766a;line-height:1.7}
+a{color:#14784d}.row{display:flex;align-items:center;flex-wrap:wrap;gap:10px}
+</style></head><body><main>
+<h1>إدارة المستخدمين والصلاحيات</h1><small>دوام الميسر — 0.2.13 (نسخة تطوير تجريبية)</small>
+<p>حدد المستخدم، واربطه بسجل العامل الصحيح، ثم اختر الصلاحيات. الوضع الشخصي يعرض بيانات العامل المرتبط فقط، حتى لو كان دوره يمنحه صلاحية أوسع.</p>
+<div class="msg" id="msg">جارٍ التحقق من تسجيل الدخول...</div>
+<label for="user">المستخدم</label><select id="user" disabled></select>
+<h2>الربط ونطاق البيانات</h2>
+<label for="employee">العامل المرتبط بهذا الحساب</label><select id="employee" disabled></select>
+<p class="hint">الربط بمعرّف العامل الفريد، وليس بتشابه الاسم أو رقم حركة البصمة. لا تفعّل النطاق الشخصي قبل التأكد من هوية العامل.</p>
+<label for="scope">نطاق البيانات</label>
+<select id="scope" disabled><option value="default">بحسب الدور الأساسي</option><option value="allow">بيانات المستخدم نفسه فقط</option></select>
+<p id="scopeNote" class="hint"></p>
+<h2>صلاحيات العمليات</h2><section id="items"></section>
+<p class="hint">السماح والمنع يطبقان مع مراعاة الدور ونطاق البيانات. بعض الوحدات لا تزال تملك قيودًا إضافية في الخادم، ولا يمنح هذا الاختيار وصولًا إليها تلقائيًا.</p>
+<p class="row"><button id="save" disabled>حفظ التعديلات</button><button id="reload" class="secondary" type="button">إعادة تحميل</button></p>
+<p class="row"><a href="./my-attendance.html">تجربة صفحة العامل الشخصية</a><a href="./">العودة إلى التطبيق</a></p>
+</main><script>
+'use strict';
 const names={'device.sync':'جلب بصمات الجهاز','device.attendance.view':'عرض بصمات الجهاز','device.correction':'تصحيح بصمات الجهاز','employees.view':'عرض بيانات العاملين','employees.edit':'تعديل بيانات العاملين','attendance.manual':'إدخال الحضور يدويًا','reports.view':'عرض التقارير','users.manage':'إدارة المستخدمين'};
-const msg=document.getElementById('msg'),user=document.getElementById('user'),items=document.getElementById('items'),save=document.getElementById('save');let records=[],keys=[],original={},dirty={};
-async function api(path,opts){let r=await fetch('/api/'+path,{credentials:'same-origin',cache:'no-store',...opts});let d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||('HTTP '+r.status));return d}
-function render(){const id=user.value;dirty={};items.replaceChildren();for(const key of keys){const row=document.createElement('article'),label=document.createElement('span'),select=document.createElement('select');label.textContent=names[key]||key;select.dataset.key=key;for(const [value,title] of [['default','افتراضي بحسب الدور'],['allow','سماح'],['deny','منع']]){const opt=document.createElement('option');opt.value=value;opt.textContent=title;select.append(opt)}const cur=original[id+'|'+key];select.value=cur===true?'allow':cur===false?'deny':'default';select.addEventListener('change',()=>{dirty[key]=select.value;save.disabled=false});row.append(label,select);items.append(row)}save.disabled=true}
-async function load(){save.disabled=true;user.disabled=true;msg.textContent='جارٍ تحميل بيانات المستخدمين...';try{const [u,p]=await Promise.all([api('users'),api('permissions')]);records=u.items||[];keys=p.keys||[];original={};for(const item of p.items||[])original[item.user_id+'|'+item.permission_key]=item.allowed===1;const selected=user.value;user.replaceChildren();for(const record of records){const opt=document.createElement('option');opt.value=record.id;opt.textContent=record.name+' — '+record.role;user.append(opt)}if(records.some(x=>x.id===selected))user.value=selected;user.disabled=!records.length;render();msg.textContent=records.length?'اختر المستخدم وعدّل الصلاحيات ثم احفظ.':'لا يوجد مستخدمون';}catch(e){msg.textContent='تعذر فتح إدارة المستخدمين: '+e.message+'\nتأكد من الدخول بحساب المدير وإنشاء جدول الصلاحيات.';items.replaceChildren()}}
-user.addEventListener('change',render);document.getElementById('reload').addEventListener('click',load);
-save.addEventListener('click',async()=>{const changes=Object.entries(dirty);if(!changes.length)return;save.disabled=true;msg.textContent='جارٍ حفظ '+changes.length+' تعديل...';try{for(const [permission_key,v] of changes){await api('permissions',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:user.value,permission_key,allowed:v==='default'?null:v==='allow'})})}msg.textContent='تم حفظ التغييرات، وجارٍ إعادة تحميل الصلاحيات.';await load()}catch(e){msg.textContent='لم يكتمل حفظ جميع التغييرات: '+e.message+'\nاضغط إعادة تحميل لمراجعة المحفوظ.';save.disabled=false}});
-load();</script></body></html>
+const $=id=>document.getElementById(id),msg=$('msg'),user=$('user'),employee=$('employee'),scope=$('scope'),items=$('items'),save=$('save');
+let records=[],employees=[],keys=[],original={},dirty={},initialEmployee='',initialScope='default';
+async function api(path,opts={}){
+ const r=await fetch('/api/'+path,{credentials:'same-origin',cache:'no-store',...opts});
+ const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||('HTTP '+r.status));return d;
+}
+function selectedRecord(){return records.find(x=>x.id===user.value)}
+function changed(){return Object.keys(dirty).length>0||employee.value!==initialEmployee||scope.value!==initialScope}
+function updateSave(){save.disabled=!changed()||!selectedRecord()}
+function render(){
+ const record=selectedRecord();dirty={};items.replaceChildren();employee.replaceChildren();
+ const empty=document.createElement('option');empty.value='';empty.textContent='— غير مربوط بعامل —';employee.append(empty);
+ for(const e of employees){const o=document.createElement('option');o.value=e.id;o.textContent=e.name+' ('+e.code+')';employee.append(o)}
+ if(!record){employee.disabled=true;scope.disabled=true;save.disabled=true;return}
+ employee.value=record.employee_id||'';initialEmployee=employee.value;employee.disabled=false;
+ const persisted=original[record.id+'|data.self_only'];
+ const isViewer=record.role==='viewer',isAdmin=record.role==='admin';
+ initialScope=isViewer?'allow':persisted===true?'allow':'default';
+ scope.value=initialScope;scope.disabled=isViewer||isAdmin;
+ $('scopeNote').textContent=isViewer?'دور الاطلاع الشخصي مقيد ببيانات العامل تلقائيًا، ولا يمكن توسيعه.':isAdmin?'مدير النظام لا يقيّد نطاقه الشخصي؛ استخدم حساب عامل مستقلًا للعرض الشخصي.':'تفعيل النطاق الشخصي يمنع الاطلاع أو التعديل خارج بيانات العامل المرتبط.';
+ for(const key of keys.filter(k=>k!=='data.self_only')){
+   const row=document.createElement('article'),label=document.createElement('span'),select=document.createElement('select');
+   label.textContent=names[key]||key;select.dataset.key=key;
+   for(const [value,title] of [['default','افتراضي بحسب الدور'],['allow','سماح'],['deny','منع']]){
+    const opt=document.createElement('option');opt.value=value;opt.textContent=title;select.append(opt);
+   }
+   const cur=original[record.id+'|'+key];select.value=cur===true?'allow':cur===false?'deny':'default';
+   select.addEventListener('change',()=>{dirty[key]=select.value;updateSave()});
+   row.append(label,select);items.append(row);
+ }
+ updateSave();
+}
+async function load(){
+ save.disabled=true;user.disabled=true;employee.disabled=true;scope.disabled=true;
+ msg.textContent='جارٍ تحميل حسابات المستخدمين والصلاحيات والعاملين...';
+ try{
+  const [u,p,e]=await Promise.all([api('users'),api('permissions'),api('employees')]);
+  records=u.items||[];employees=e.items||[];keys=p.keys||[];
+  original={};for(const x of p.items||[])original[x.user_id+'|'+x.permission_key]=x.allowed===1;
+  const selected=user.value;user.replaceChildren();
+  for(const x of records){const o=document.createElement('option');o.value=x.id;o.textContent=x.name+' — '+x.role;user.append(o)}
+  if(records.some(x=>x.id===selected))user.value=selected;
+  user.disabled=!records.length;render();
+  msg.textContent=records.length?'يمكنك الآن تعديل ربط العامل ونطاق العرض والصلاحيات.':'لا يوجد مستخدمون.';
+ }catch(e){
+  msg.textContent='تعذر تحميل إدارة المستخدمين: '+e.message+'\nتأكد من الدخول بحساب مدير، وتوفر جدول الصلاحيات في D1.';
+  items.replaceChildren();
+ }
+}
+user.addEventListener('change',()=>{render()});
+employee.addEventListener('change',updateSave);scope.addEventListener('change',updateSave);
+$('reload').addEventListener('click',load);
+save.addEventListener('click',async()=>{
+ const record=selectedRecord();if(!record||!changed())return;
+ if(scope.value==='allow'&&!employee.value){msg.textContent='لا يمكن منح النطاق الشخصي دون ربط الحساب بعامل محدد.';return}
+ if(record.role==='admin'&&employee.value!==initialEmployee){msg.textContent='يُفضّل عدم ربط حساب مدير النظام بعامل؛ أنشئ له حسابًا شخصيًا مستقلًا.';return}
+ save.disabled=true;msg.textContent='جارٍ حفظ التغييرات...';
+ try{
+  // Save employee linking first so self-only permissions never point to an unlinked account.
+  if(employee.value!==initialEmployee)await api('users/'+encodeURIComponent(record.id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({employee_id:employee.value||null})});
+  if(scope.value!==initialScope)await api('permissions',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:record.id,permission_key:'data.self_only',allowed:scope.value==='allow'?true:null})});
+  for(const [permission_key,v] of Object.entries(dirty)){
+   await api('permissions',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:record.id,permission_key,allowed:v==='default'?null:v==='allow'})});
+  }
+  await load();msg.textContent='حُفظت التعديلات. تسري التغييرات على المستخدم بعد إعادة تسجيل الدخول.';
+ }catch(e){msg.textContent='لم يكتمل الحفظ: '+e.message+'\nاضغط إعادة تحميل لمراجعة ما تم حفظه قبل إعادة المحاولة.';save.disabled=false}
+});
+load();
+</script></body></html>

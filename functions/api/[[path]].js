@@ -485,6 +485,37 @@ async function deviceMappings(db,user,method,request){
   return response({matched:true,employee_id:employeeId,device_user_id:deviceUserId,raw_count:record.n,attendance_posted:false,payroll_changed:false});
 }
 
+
+/* Read-only device attendance review: never writes to punch_events or payroll. */
+async function deviceAttendance(db,user,request){
+  if(!['admin','hr','supervisor'].includes(user.role))return reject(403,'ليس لديك صلاحية لعرض بصمات العاملين');
+  const u=new URL(request.url);
+  const date=str(u.searchParams.get('date'),10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return reject(400,'حدد تاريخًا صحيحًا');
+  weekdayOf(date);
+  const employeeId=str(u.searchParams.get('employee_id'),80);
+  const sql=["SELECT r.event_fingerprint,r.device_user_id,r.occurred_at_device,r.status_code,r.punch_code,",
+   "e.id AS employee_id,e.name AS employee_name,e.code AS employee_code",
+   "FROM device_raw_punches r LEFT JOIN employees e ON e.organization_id=r.organization_id AND e.device_user_id=r.device_user_id",
+   "WHERE r.organization_id=? AND r.device_id=? AND r.occurred_at_device>=? AND r.occurred_at_device<?"];
+  const args=[ORG,'mb10-main',date+'T00:00:00',date+'T23:59:59'];
+  if(employeeId){sql.push('AND e.id=?');args.push(employeeId)}
+  if(user.role==='supervisor'){sql.push('AND e.department=?');args.push(user.department_scope||'')}
+  sql.push('ORDER BY r.occurred_at_device ASC LIMIT 2001');
+  const rows=(await db.prepare(sql.join(' ')).bind(...args).all()).results||[];
+  if(rows.length>2000)return reject(409,'عدد الحركات كبير؛ يرجى تضييق البحث');
+  const result=rows.map(r=>({
+    ...r,kind:r.punch_code===0?'in':r.punch_code===1?'out':'other',
+    matched:!!r.employee_id,
+    requires_review:!r.employee_id||![0,1].includes(r.punch_code)
+  }));
+  return response({date,items:result,matched_count:result.filter(r=>r.matched).length,
+    unmatched_count:result.filter(r=>!r.matched).length,
+    review_count:result.filter(r=>r.requires_review).length,
+    time_authority:'device',timezone:'Asia/Aden',
+    read_only:true,posted_to_attendance:false,payroll_changed:false});
+}
+
 export async function onRequest(context) {
   const {request,env} = context;
   const db=env.DB;
@@ -511,6 +542,7 @@ export async function onRequest(context) {
     if (path==='me' && method==='GET') return response({user:publicUser(user)});
     if (path==='change-password' && method==='POST') return changePassword(db,user,request);
     if (user.must_change_password) return reject(403,'يجب تغيير كلمة المرور قبل متابعة العمل');
+    if (path==='device-attendance' && method==='GET') return deviceAttendance(db,user,request);
     if (path==='device-mappings' && ['GET','POST'].includes(method)) return deviceMappings(db,user,method,request);
     if (path==='employees' && ['GET','POST'].includes(method)) return people(db,user,method,null,request);
     if (path.startsWith('employees/') && method==='PUT') return people(db,user,method,path.slice('employees/'.length),request);

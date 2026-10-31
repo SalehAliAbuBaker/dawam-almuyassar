@@ -453,6 +453,38 @@ async function attendanceSummary(db,user,request){
     schedule:{start_time:config.start_time,end_time:config.end_time,thursday_end_time:config.thursday_end_time,weekly_off:'friday'},
     financial_mode:'draft_preview_only'});
 }
+
+/* Phase 2: manager-reviewed mapping. No raw punch conversion or payroll writes. */
+async function deviceMappings(db,user,method,request){
+  if(user.role!=='admin')return reject(403,'المطابقة لمدير النظام فقط');
+  if(method==='GET'){
+    const raw=await db.prepare("SELECT device_user_id,COUNT(*) AS punch_count,MIN(occurred_at_device) AS first_punch,MAX(occurred_at_device) AS last_punch FROM device_raw_punches WHERE organization_id=? AND device_id='mb10-main' GROUP BY device_user_id ORDER BY CAST(device_user_id AS INTEGER)").bind(ORG).all();
+    const employees=await db.prepare('SELECT id,code,name,device_user_id FROM employees WHERE organization_id=? ORDER BY name').bind(ORG).all();
+    return response({device_id:'mb10-main',raw_users:raw.results||[],employees:employees.results||[],note:'المطابقة يدوية بعد تأكيد الهوية؛ لا تأثير على الرواتب'});
+  }
+  if(method!=='POST')return reject(405,'طريقة غير مدعومة');
+  const b=await bodyJson(request);
+  const employeeId=str(b.employee_id,80),deviceUserId=str(b.device_user_id,80);
+  if(b.confirm!==true||!employeeId||!/^[0-9]{1,10}$/.test(deviceUserId))
+    return reject(400,'يلزم تأكيد رقم العامل ورقم البصمة الصحيحين');
+  const employee=await db.prepare('SELECT id,name,device_user_id FROM employees WHERE id=? AND organization_id=?').bind(employeeId,ORG).first();
+  if(!employee)return reject(404,'العامل غير موجود');
+  if(employee.device_user_id&&employee.device_user_id!==deviceUserId)
+    return reject(409,'العامل مرتبط مسبقًا برقم آخر؛ يلزم مراجعة إدارية');
+  const used=await db.prepare('SELECT id FROM employees WHERE organization_id=? AND device_user_id=? AND id<>?').bind(ORG,deviceUserId,employeeId).first();
+  if(used)return reject(409,'رقم البصمة مرتبط بعامل آخر');
+  const record=await db.prepare('SELECT COUNT(*) AS n FROM device_raw_punches WHERE organization_id=? AND device_id=? AND device_user_id=?').bind(ORG,'mb10-main',deviceUserId).first();
+  if(!record?.n)return reject(404,'رقم البصمة غير موجود ضمن الحركات المستوردة؛ يلزم مراجعته');
+  if(employee.device_user_id===deviceUserId)return response({matched:true,unchanged:true,employee_id:employeeId,device_user_id:deviceUserId});
+  const updated=await db.prepare("UPDATE employees SET device_user_id=?,updated_at=datetime('now') WHERE id=? AND organization_id=? AND (device_user_id IS NULL OR device_user_id='')")
+    .bind(deviceUserId,employeeId,ORG).run();
+  if(updated.meta?.changes!==1)return reject(409,'تغيرت بيانات العامل؛ أعد المحاولة بعد تحديث الصفحة');
+  await db.prepare("UPDATE device_raw_punches SET matched_employee_id=?,review_state='matched' WHERE organization_id=? AND device_id=? AND device_user_id=? AND review_state='pending'")
+    .bind(employeeId,ORG,'mb10-main',deviceUserId).run();
+  await audit(db,user,'device_user.matched','employee',employeeId,{device_id:'mb10-main',device_user_id:deviceUserId});
+  return response({matched:true,employee_id:employeeId,device_user_id:deviceUserId,raw_count:record.n,attendance_posted:false,payroll_changed:false});
+}
+
 export async function onRequest(context) {
   const {request,env} = context;
   const db=env.DB;
@@ -479,6 +511,7 @@ export async function onRequest(context) {
     if (path==='me' && method==='GET') return response({user:publicUser(user)});
     if (path==='change-password' && method==='POST') return changePassword(db,user,request);
     if (user.must_change_password) return reject(403,'يجب تغيير كلمة المرور قبل متابعة العمل');
+    if (path==='device-mappings' && ['GET','POST'].includes(method)) return deviceMappings(db,user,method,request);
     if (path==='employees' && ['GET','POST'].includes(method)) return people(db,user,method,null,request);
     if (path.startsWith('employees/') && method==='PUT') return people(db,user,method,path.slice('employees/'.length),request);
     if (path==='punches' && ['GET','POST'].includes(method)) return punches(db,user,method,request);

@@ -39,6 +39,10 @@ dialog::backdrop{background:#102a1ca8}.preview-content{background:#fff;padding:1
  .report-table td,.report-table th{border:1px solid #888!important;padding:5px 6px!important;color:#111!important}
  .report-title{color:#111} 
 }
+body.embedded{padding:0;margin:0;max-width:none;background:transparent}
+body.embedded > header{display:none}
+body.embedded > section.panel{border:0;box-shadow:none;margin:0 0 12px;padding:13px 5px}
+body.embedded .pager{padding-bottom:24px}
 </style></head><body>
 <header><h1>الحضور والبصمة</h1><p class="muted">دوام الميسر — استعراض الحركات اليدوية وحركات MB10، مع البحث والفلترة والمعاينة والطباعة والمشاركة. التقارير لا تعتمد الرواتب أو الخصومات.</p>
 <nav class="actions"><a href="/">الواجهة الأساسية</a><a href="/manage-punches.html">إدارة وتصحيح البصمات</a><a href="/offline.html">الحضور دون إنترنت</a></nav></header>
@@ -72,6 +76,18 @@ dialog::backdrop{background:#102a1ca8}.preview-content{background:#fff;padding:1
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
+const embedded=new URLSearchParams(location.search).get('embedded')==='1';
+if(embedded){
+ document.body.classList.add('embedded');
+ const reportHeight=()=>{
+   const value=Math.ceil(document.body.scrollHeight+12);
+   if(window.parent!==window)window.parent.postMessage({type:'dawam-attendance-resize',height:value},location.origin);
+ };
+ if('ResizeObserver' in window)new ResizeObserver(reportHeight).observe(document.body);
+ window.addEventListener('load',reportHeight);window.addEventListener('resize',reportHeight);
+ setTimeout(reportHeight,150);
+}
+
 const kinds={in:'دخول',out:'خروج',other:'غير محدد'},sources={device:'جهاز MB10',manual:'يدوي',import:'استيراد',demo:'تجريبي'};
 let page=1,total=0,list=[],loading=false,lastFilters=null;
 const PAGE_SIZE=100,EXPORT_LIMIT=5000;

@@ -297,11 +297,38 @@ async function punches(db,user,method,request){
   if (!employee || !allowedEmployee(user,employee)) return reject(403,'هذا العامل ليس ضمن نطاق صلاحيتك');
   const timestamp=str(b.timestamp,35),kind=str(b.kind,10);
   if (!/^\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d)?$/.test(timestamp)||!KINDS.has(kind)) return reject(400,'تاريخ أو نوع حركة غير صالح');
+  // Client-generated UUID makes offline retries idempotent even if the response is lost.
+  const clientEventId=b.client_event_id===undefined?null:str(b.client_event_id,80);
+  if(clientEventId!==null&&!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(clientEventId))
+    return reject(400,'معرف مزامنة الحركة غير صالح');
+  const deviceId=clientEventId?'offline-manual':null;
+  if(clientEventId){
+    const existing=await db.prepare('SELECT id,employee_id,occurred_at,kind,source FROM punch_events WHERE organization_id=? AND device_id=? AND device_event_id=?')
+      .bind(ORG,deviceId,clientEventId).first();
+    if(existing){
+      if(existing.employee_id!==employee.id||existing.occurred_at!==timestamp||existing.kind!==kind||existing.source!=='manual')
+        return reject(409,'معرف الحركة مستخدم لبيانات مختلفة؛ يلزم مراجعة المزامنة');
+      return response({item:{id:existing.id,employee_id:employee.id,timestamp,kind,source:'manual'},duplicate:true,synced:true});
+    }
+  }
   const id=uuid();
-  await db.prepare("INSERT INTO punch_events(id,organization_id,employee_id,occurred_at,kind,source,entered_by) VALUES(?,?,?,?,?,'manual',?)")
-    .bind(id,ORG,employee.id,timestamp,kind,user.id).run();
-  await audit(db,user,'punch.manual_created','punch',id,{employee_id:employee.id});
-  return response({item:{id,employee_id:employee.id,timestamp,kind,source:'manual'}},201);
+  try{
+    await db.batch([
+      db.prepare("INSERT INTO punch_events(id,organization_id,employee_id,occurred_at,kind,source,device_id,device_event_id,entered_by) VALUES(?,?,?,?,?,'manual',?,?,?)")
+        .bind(id,ORG,employee.id,timestamp,kind,deviceId,clientEventId,user.id),
+      db.prepare('INSERT INTO audit_events(id,organization_id,actor_user_id,event_type,entity_type,entity_id,details_json) VALUES (?,?,?,?,?,?,?)')
+        .bind(uuid(),ORG,user.id,'punch.manual_created','punch',id,JSON.stringify({employee_id:employee.id,offline:!!clientEventId}))
+    ]);
+  }catch(error){
+    if(clientEventId&&/UNIQUE/i.test(String(error?.message||''))){
+      const saved=await db.prepare('SELECT id,employee_id,occurred_at,kind,source FROM punch_events WHERE organization_id=? AND device_id=? AND device_event_id=?')
+        .bind(ORG,deviceId,clientEventId).first();
+      if(saved&&saved.employee_id===employee.id&&saved.occurred_at===timestamp&&saved.kind===kind&&saved.source==='manual')
+        return response({item:{id:saved.id,employee_id:employee.id,timestamp,kind,source:'manual'},duplicate:true,synced:true});
+    }
+    throw error;
+  }
+  return response({item:{id,employee_id:employee.id,timestamp,kind,source:'manual'},synced:true},201);
 }
 
 /* Allow auditable corrections only for manual punch rows. */

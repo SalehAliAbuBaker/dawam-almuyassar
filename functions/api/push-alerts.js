@@ -75,8 +75,13 @@ export async function notifyWorkersAfterSuccessfulSync(db,env){
  const close=thursday?13*60+15:13*60+45;
  if(clock.minutes<7*60+45)return {skipped:'before_reminder_window'};
  // Small batch per sync: bounds outbound fetches and D1 queries in a Worker invocation.
- const subs=await db.prepare("SELECT s.id,s.employee_id,s.endpoint,s.p256dh,s.auth_secret FROM push_subscriptions s JOIN users u ON u.id=s.user_id AND u.organization_id=s.organization_id JOIN employees e ON e.id=s.employee_id AND e.organization_id=s.organization_id WHERE s.organization_id=? AND u.is_active=1 AND u.employee_id=s.employee_id AND e.status='active' AND e.type='regular' ORDER BY s.created_at LIMIT 20")
-   .bind(org).all();
+ const eligible="FROM push_subscriptions s JOIN users u ON u.id=s.user_id AND u.organization_id=s.organization_id JOIN employees e ON e.id=s.employee_id AND e.organization_id=s.organization_id WHERE s.organization_id=? AND u.is_active=1 AND u.employee_id=s.employee_id AND e.status='active' AND e.type='regular'";
+ const total=await db.prepare("SELECT COUNT(*) AS n "+eligible).bind(org).first();
+ const chunks=Math.max(1,Math.ceil(Number(total?.n||0)/20));
+ // Rotate batches so a growing team never leaves later subscriptions unprocessed.
+ const offset=(Math.floor(Date.now()/600000)%chunks)*20;
+ const subs=await db.prepare("SELECT s.id,s.employee_id,s.endpoint,s.p256dh,s.auth_secret "+eligible+" ORDER BY s.created_at,s.id LIMIT 20 OFFSET ?")
+   .bind(org,offset).all();
  const subscriptions=subs.results||[],cache=new Map();
  for(const s of subscriptions){
   if(!validatePushSubscription(pack(s)))continue;

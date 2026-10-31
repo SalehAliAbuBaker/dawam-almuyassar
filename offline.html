@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#176546"><link rel="manifest" href="/offline.webmanifest">
+<title>دوام الميسر — العمل دون إنترنت</title>
+<style>
+:root{font:16px system-ui,Tahoma,sans-serif;color:#163b2d;background:#f3f7f4}*{box-sizing:border-box}
+body{max-width:760px;margin:auto;padding:16px}header{padding:10px 0 3px}
+h1{font-size:1.5rem;margin-bottom:6px}h2{font-size:1.14rem}p{line-height:1.6}
+.card{padding:17px;background:#fff;border:1px solid #d8e6dc;border-radius:14px;margin:12px 0;box-shadow:0 1px 3px #142e2412}
+label{display:block;font-weight:600;margin:9px 0}input,select,button{font:inherit;border-radius:9px;padding:11px;border:1px solid #aacaba}
+input,select{width:100%;margin-top:5px;max-width:100%}
+button{background:#16623f;color:#fff;border:0;cursor:pointer}button:disabled{opacity:.55;cursor:not-allowed}
+button.secondary{background:#e3eee7;color:#174c34}button.danger{background:#ad2a2a}
+.row{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin:12px 0}.row>*{flex:0 0 auto}
+.info{font-size:.92rem;color:#506b5d}.status{background:#e7f2e9;border-radius:9px;padding:12px;white-space:pre-wrap}
+.bad{background:#ffe8e8;color:#962525}.pending{padding:11px 4px;border-bottom:1px solid #e0ece2;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.small{font-size:.86rem}a{color:#15623b}#appPanel[hidden],#enrollPanel[hidden],#unlockPanel[hidden]{display:none}
+</style></head><body>
+<header><h1>دوام الميسر <span class="small">— العمل دون إنترنت</span></h1>
+<p class="info">نموذج تشغيل تجريبي للحضور اليدوي، منفصل عن شاشة الرواتب. يُستخدم بعد إعداد الدخول المحلي مرة واحدة عبر الإنترنت.</p>
+<div class="row"><a href="/">الواجهة الأساسية</a><a href="/manage-punches.html">إدارة البصمات</a><span id="net" class="info"></span></div>
+</header>
+<div id="notice" class="status" role="status">جارٍ تهيئة الوضع المحلي...</div>
+<section class="card" id="enrollPanel" hidden><h2>تهيئة الدخول المحلي لأول مرة</h2>
+<p>سجّل دخولك إلى التطبيق الرئيسي وأبقِ الإنترنت متصلًا، ثم أنشئ عبارة دخول خاصة بهذا الجهاز. لا تستخدم كلمة مرور حسابك الرئيسي.</p>
+<label>عبارة الدخول المحلية (8 محارف على الأقل)<input id="newPin" type="password" autocomplete="new-password" minlength="8"></label>
+<label>تأكيد عبارة الدخول<input id="newPin2" type="password" autocomplete="new-password" minlength="8"></label>
+<button id="enroll">تفعيل العمل دون إنترنت</button>
+<p class="info">تُشفّر قائمة العاملين والحركات المعلقة محليًا. تنتهي صلاحية الدخول دون إنترنت بعد 72 ساعة من آخر تحقق ناجح من الخادم. لا تُحفظ الرواتب محليًا.</p></section>
+<section class="card" id="unlockPanel" hidden><h2>الدخول دون اتصال</h2>
+<label>عبارة الدخول المحلية<input id="pin" type="password" autocomplete="current-password"></label>
+<div class="row"><button id="unlock">فتح السجل المحلي</button><button class="secondary" id="reset" type="button">مسح بيانات هذا الجهاز</button></div>
+<p class="info">قد تحتاج إلى تسجيل دخول جديد على الخادم عند استئناف المزامنة. لا يمكن إعادة تعيين العبارة المحلية دون مسح بيانات الجهاز، بما فيها العمليات غير المتزامنة.</p></section>
+<section class="card" id="appPanel" hidden>
+<div class="row"><strong id="username"></strong><button class="secondary" id="lock">قفل</button></div>
+<p id="lastSync" class="info"></p>
+<h2>إضافة حركة حضور يدوية</h2>
+<label>العامل<select id="employee"></select></label>
+<label>الحركة<select id="kind"><option value="in">حضور</option><option value="out">انصراف</option></select></label>
+<label>التاريخ والوقت بتوقيت اليمن<input id="dateTime" type="datetime-local" step="1" required></label>
+<div class="row"><button id="save">حفظ على الجهاز</button><button id="sync">مزامنة الآن</button><button id="refresh" class="secondary">تحديث أسماء العاملين</button></div>
+<h2>الحركات بانتظار المزامنة <span id="count">0</span></h2>
+<div id="queue"></div>
+<p class="info">لا تُعتمد الحركات أو الخصومات أو الرواتب في وضع عدم الاتصال. لا تغلق المتصفح قبل ظهور رسالة نجاح الحفظ المحلي.</p>
+</section>
+<script>
+(function(){
+'use strict';
+const $=id=>document.getElementById(id), DB_NAME='dawam-offline-v1', EXPIRY_HOURS=72, ROUNDS=250000;
+let unlocked=null,key=null,busy=false, syncing=false;
+const enc=new TextEncoder(),dec=new TextDecoder();
+function notify(message,bad=false){$('notice').textContent=message;$('notice').className='status'+(bad?' bad':'')}
+function net(){ $('net').textContent=navigator.onLine?'متصل بالشبكة':'دون إنترنت';$('sync').disabled=!navigator.onLine||!unlocked }
+window.addEventListener('online',()=>{net();if(unlocked)syncQueue()});window.addEventListener('offline',net);
+function b64(bytes){let s='';for(const c of bytes)s+=String.fromCharCode(c);return btoa(s)}
+function unb64(s){const a=atob(s);return Uint8Array.from(a,c=>c.charCodeAt(0))}
+function random(n){const a=new Uint8Array(n);crypto.getRandomValues(a);return a}
+function getDb(){return new Promise((resolve,reject)=>{const r=indexedDB.open(DB_NAME,1);r.onupgradeneeded=()=>r.result.createObjectStore('records',{keyPath:'id'});r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
+async function vaultGet(){const d=await getDb();return new Promise((resolve,reject)=>{const tx=d.transaction('records','readonly'),r=tx.objectStore('records').get('vault');r.onsuccess=()=>resolve(r.result||null);r.onerror=()=>reject(r.error);tx.oncomplete=()=>d.close();tx.onerror=()=>d.close()})}
+async function vaultPut(v){const d=await getDb();return new Promise((resolve,reject)=>{const tx=d.transaction('records','readwrite');tx.objectStore('records').put({...v,id:'vault'});tx.oncomplete=()=>{d.close();resolve()};tx.onerror=()=>{d.close();reject(tx.error)};tx.onabort=()=>{d.close();reject(tx.error)}})}
+async function vaultDelete(){const d=await getDb();return new Promise((resolve,reject)=>{const tx=d.transaction('records','readwrite');tx.objectStore('records').delete('vault');tx.oncomplete=()=>{d.close();resolve()};tx.onerror=()=>{d.close();reject(tx.error)}})}
+async function derive(pass,salt){const raw=await crypto.subtle.importKey('raw',enc.encode(pass),'PBKDF2',false,['deriveKey']);return crypto.subtle.deriveKey({name:'PBKDF2',hash:'SHA-256',salt,iterations:ROUNDS},raw,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])}
+async function saveVault(){if(!unlocked||!key)throw Error('السجل مقفل');const current=await vaultGet();if(!current)throw Error('لم يتم إعداد الجهاز');const iv=random(12), encrypted=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,enc.encode(JSON.stringify(unlocked)));await vaultPut({salt:current.salt,iv:b64(iv),payload:b64(new Uint8Array(encrypted))})}
+async function call(url,options){let r;try{r=await fetch(url,{credentials:'same-origin',cache:'no-store',...options})}catch{throw Error('تعذر الاتصال بالخادم؛ بقيت الحركات محفوظة محليًا')}
+let d;try{d=await r.json()}catch{throw Error('استجابة الخادم غير متوقعة')};if(!r.ok)throw Error(r.status===401?'انتهت جلسة الخادم؛ سجل الدخول إلى التطبيق الرئيسي ثم أعد المزامنة':d.error||'تعذر إتمام الطلب');return d}
+function permitted(user){return ['admin','hr','supervisor'].includes(user.role)&&!user.must_change_password}
+function cleanEmployees(list){return (list||[]).filter(e=>e.id&&e.name&&e.status!=='inactive').map(e=>({id:e.id,name:e.name,code:e.code||'',department:e.department||''}))}
+function adenNow(){const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Aden',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(new Date());const m=Object.fromEntries(parts.map(x=>[x.type,x.value]));return m.year+'-'+m.month+'-'+m.day+'T'+m.hour+':'+m.minute+':'+m.second}
+function show(which){for(const id of ['enrollPanel','unlockPanel','appPanel'])$(id).hidden=id!==which}
+function render(){if(!unlocked)return;show('appPanel');$('username').textContent='الحساب: '+unlocked.user.name;$('count').textContent=String(unlocked.queue.length);$('lastSync').textContent='آخر تحقق من الخادم: '+(unlocked.lastVerified||'غير معروف')+' — تنتهي صلاحية الدخول المحلي: '+new Date(unlocked.expiresAt).toLocaleString('ar-YE',{timeZone:'Asia/Aden'});const select=$('employee'),value=select.value;select.replaceChildren();for(const e of unlocked.employees){const o=document.createElement('option');o.value=e.id;o.textContent=e.name+' ('+e.code+')';select.append(o)}if(unlocked.employees.some(e=>e.id===value))select.value=value;const q=$('queue');q.replaceChildren();for(const item of unlocked.queue){const row=document.createElement('div');row.className='pending';const t=document.createElement('span');const emp=unlocked.employees.find(e=>e.id===item.employee_id);t.textContent=(emp?.name||item.employee_id)+' — '+item.timestamp+' — '+(item.kind==='in'?'حضور':'انصراف');const btn=document.createElement('button');btn.className='danger small';btn.textContent='إلغاء المعلقة';btn.disabled=syncing;btn.onclick=async()=>{if(!confirm('إلغاء هذه الحركة قبل المزامنة؟'))return;const old=unlocked.queue;unlocked.queue=old.filter(x=>x.client_event_id!==item.client_event_id);try{await saveVault();render();notify('أُلغيت الحركة المحلية فقط')}catch(e){unlocked.queue=old;notify(e.message,true)}};row.append(t,btn);q.append(row)}if(!unlocked.queue.length)q.textContent='لا توجد حركات معلقة.';net()}
+async function initialize(){net();try{if('serviceWorker'in navigator)await navigator.serviceWorker.register('/offline-sw.js',{scope:'/'});const record=await vaultGet();show(record?'unlockPanel':'enrollPanel');notify(record?'أدخل عبارة المرور المحلية للمتابعة.':'يجب التهيئة مرة واحدة عبر اتصال بالإنترنت.')}catch(e){notify('تعذر تهيئة التخزين المحلي: '+e.message,true)}}
+$('enroll').onclick=async()=>{if(busy)return;busy=true;$('enroll').disabled=true;try{if(!navigator.onLine)throw Error('يلزم اتصال بالإنترنت للتهيئة الأولى');const p=$('newPin').value;if(p.length<8||p!==$('newPin2').value)throw Error('أدخل عبارتين متطابقتين لا تقلان عن 8 محارف');if(await vaultGet())throw Error('هذا الجهاز مجهز بالفعل؛ افتح السجل المحلي بدل استبداله');const me=(await call('/api/me')).user;if(!permitted(me))throw Error('هذا الحساب لا يملك صلاحية تسجيل الحضور');const list=(await call('/api/employees')).items||[];const salt=random(16),derived=await derive(p,salt);const state={user:{id:me.id,name:me.name,role:me.role},employees:cleanEmployees(list),queue:[],expiresAt:Date.now()+EXPIRY_HOURS*3600000,lastVerified:new Date().toISOString()};const iv=random(12),bytes=await crypto.subtle.encrypt({name:'AES-GCM',iv},derived,enc.encode(JSON.stringify(state)));await vaultPut({salt:b64(salt),iv:b64(iv),payload:b64(new Uint8Array(bytes))});unlocked=state;key=derived;$('newPin').value='';$('newPin2').value='';$('dateTime').value=adenNow();render();notify('تم إعداد الدخول المحلي المشفر. يمكنك الآن تسجيل الحركات دون إنترنت.')}catch(e){notify(e.message,true)}finally{busy=false;$('enroll').disabled=false}};
+$('unlock').onclick=async()=>{try{const v=await vaultGet();if(!v)throw Error('لم يتم إعداد الجهاز');const derived=await derive($('pin').value,unb64(v.salt));let state;try{state=JSON.parse(dec.decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(v.iv)},derived,unb64(v.payload))))}catch{throw Error('عبارة الدخول غير صحيحة أو البيانات المحلية تالفة')};if(Date.now()>state.expiresAt)throw Error('انتهت صلاحية الدخول المحلي. اتصل بالخادم لتحديث الاعتماد؛ لا تُمسح العمليات المحفوظة.');key=derived;unlocked=state;$('pin').value='';$('dateTime').value=adenNow();render();notify('تم فتح السجل المحلي؛ الحركات الجديدة تُحفظ على الجهاز.');if(navigator.onLine)syncQueue()}catch(e){notify(e.message,true)}};
+$('reset').onclick=async()=>{const v=await vaultGet();if(!v)return;if(!navigator.onLine){notify('حذف البيانات المحلية دون اتصال غير مسموح؛ قد تضيع حركات لم تُزامَن.',true);return}if(!confirm('قد تتضمن البيانات حركات غير متزامنة. تأكد من اكتمال المزامنة قبل المتابعة. هل تريد المتابعة إلى خطوة تأكيد المسح؟'))return;const txt=prompt('اكتب «مسح البيانات المحلية» لتأكيد الحذف النهائي');if(txt!=='مسح البيانات المحلية')return;await vaultDelete();key=null;unlocked=null;show('enrollPanel');notify('تم مسح البيانات المحلية لهذا الجهاز فقط. لم تُمسح بيانات الخادم.')};
+$('lock').onclick=()=>{key=null;unlocked=null;show('unlockPanel');$('pin').value='';notify('تم قفل البيانات المحلية.')};
+$('save').onclick=async()=>{if(busy)return;busy=true;$('save').disabled=true;try{if(!unlocked)throw Error('يلزم فتح السجل المحلي');if(Date.now()>unlocked.expiresAt)throw Error('انتهت صلاحية الدخول المحلي، اتصل بالخادم لتجديده');const employee_id=$('employee').value,kind=$('kind').value,timestamp=$('dateTime').value;if(!unlocked.employees.some(x=>x.id===employee_id)||!['in','out'].includes(kind)||!/^\d{4}-\d{2}-\d{2}T\d\d:\d\d(?::\d\d)?$/.test(timestamp))throw Error('راجع بيانات الحركة');const item={client_event_id:crypto.randomUUID(),employee_id,timestamp,kind};unlocked.queue.push(item);try{await saveVault()}catch(e){unlocked.queue.pop();throw e}render();notify('تم حفظ الحركة على الجهاز، وبانتظار المزامنة.');$('dateTime').value=adenNow()}catch(e){notify(e.message,true)}finally{busy=false;$('save').disabled=false}};
+async function syncQueue(){if(!unlocked||syncing||!navigator.onLine)return;syncing=true;$('sync').disabled=true;try{const me=(await call('/api/me')).user;if(!permitted(me)||me.id!==unlocked.user.id)throw Error('المستخدم الحالي مختلف أو تغيرت صلاحياته؛ سجل الدخول بالحساب نفسه');const fresh=cleanEmployees((await call('/api/employees')).items);const allowed=new Set(fresh.map(e=>e.id));for(const item of unlocked.queue){if(!allowed.has(item.employee_id))throw Error('لا تسمح الصلاحيات الحالية بمزامنة إحدى الحركات؛ توقف الإرسال للمراجعة');await call('/api/punches',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(item)});const next=unlocked.queue.filter(x=>x.client_event_id!==item.client_event_id);const prev=unlocked.queue;unlocked.queue=next;try{await saveVault()}catch(e){unlocked.queue=prev;throw e}render()}unlocked.employees=fresh;unlocked.lastVerified=new Date().toISOString();unlocked.expiresAt=Date.now()+EXPIRY_HOURS*3600000;await saveVault();render();notify('اكتملت المزامنة؛ لا توجد حركات معلقة.')}catch(e){render();notify('المزامنة لم تكتمل: '+e.message+'\nالحركات التي لم يؤكد الخادم استقبالها باقية على الجهاز.',true)}finally{syncing=false;$('sync').disabled=!navigator.onLine||!unlocked}};
+$('sync').onclick=syncQueue;
+$('refresh').onclick=async()=>{if(!unlocked||!navigator.onLine){notify('يلزم الإنترنت لقراءة تحديثات العاملين',true);return}await syncQueue()};
+window.addEventListener('pagehide',()=>{key=null;unlocked=null});
+initialize();
+})();
+</script></body></html>

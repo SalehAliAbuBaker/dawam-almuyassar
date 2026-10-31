@@ -667,7 +667,7 @@ async function attendanceRegister(db,user,request){
  if(kind){filters.push('q.kind=?');args.push(kind);}
  if(source){filters.push('q.source=?');args.push(source);}
  if(search){
-   const like='%'+search.replace(/[\\%_]/g,'\\async function deviceAttendance(db,user,request){')+'%';
+   const like='%'+search.replace(/[\\%_]/g, m=>'\\'+m)+'%';
    filters.push("(q.employee_name LIKE ? ESCAPE '\\' OR q.employee_code LIKE ? ESCAPE '\\' OR q.device_user_id LIKE ? ESCAPE '\\')");
    args.push(like,like,like);
  }

@@ -624,6 +624,62 @@ async function deviceMappings(db,user,method,request){
 
 
 /* Read-only device attendance review: never writes to punch_events or payroll. */
+/* Unified read-only attendance register for searching and printing.
+   An MB10 raw event is omitted once its corrected/posted event exists. */
+async function attendanceRegister(db,user,request){
+ const p=new URL(request.url).searchParams;
+ const dateFrom=str(p.get('from'),10),dateTo=str(p.get('to'),10);
+ if(dateFrom)weekdayOf(dateFrom);
+ if(dateTo)weekdayOf(dateTo);
+ if(dateFrom&&dateTo&&dateFrom>dateTo)return reject(400,'تاريخ البداية بعد تاريخ النهاية');
+ const kind=str(p.get('kind'),10),source=str(p.get('source'),12);
+ if(kind&&!KINDS.has(kind))return reject(400,'نوع الحركة غير صالح');
+ if(source&&!['manual','device','import','demo'].includes(source))return reject(400,'مصدر الحركة غير صالح');
+ const search=str(p.get('search'),100),employeeId=str(p.get('employee_id'),80);
+ const page=Number(p.get('page')||1),pageSize=Number(p.get('page_size')||100);
+ if(!Number.isInteger(page)||page<1||page>1000||!Number.isInteger(pageSize)||pageSize<1||pageSize>250)
+   return reject(400,'إعدادات التصفح غير صالحة');
+ const combined=[
+  "SELECT p.id,p.employee_id,e.name AS employee_name,e.code AS employee_code,e.department,",
+  "p.occurred_at AS timestamp,p.kind,p.source,r.device_user_id,p.device_event_id,",
+  "CASE WHEN p.source='device' AND r.event_fingerprint IS NOT NULL THEN 1 ELSE 0 END AS corrected",
+  "FROM punch_events p JOIN employees e ON e.organization_id=p.organization_id AND e.id=p.employee_id",
+  "LEFT JOIN device_raw_punches r ON r.organization_id=p.organization_id AND r.device_id=p.device_id AND r.event_fingerprint=p.device_event_id",
+  "WHERE p.organization_id=? UNION ALL",
+  "SELECT 'device:'||r.event_fingerprint AS id,e.id AS employee_id,e.name AS employee_name,",
+  "e.code AS employee_code,e.department,r.occurred_at_device AS timestamp,",
+  "CASE r.punch_code WHEN 0 THEN 'in' WHEN 1 THEN 'out' ELSE 'other' END AS kind,",
+  "'device' AS source,r.device_user_id,r.event_fingerprint AS device_event_id,0 AS corrected",
+  "FROM device_raw_punches r LEFT JOIN employees e ON e.organization_id=r.organization_id AND e.device_user_id=r.device_user_id",
+  "WHERE r.organization_id=? AND r.device_id='mb10-main'",
+  "AND NOT EXISTS(SELECT 1 FROM punch_events p WHERE p.organization_id=r.organization_id AND p.device_id=r.device_id AND p.device_event_id=r.event_fingerprint)"
+ ].join(' ');
+ const filters=[],args=[ORG,ORG];
+ if(user.role==='viewer'){filters.push('q.employee_id=?');args.push(user.employee_id||'');}
+ if(user.role==='supervisor'){filters.push('q.department=? AND q.employee_id IS NOT NULL');args.push(user.department_scope||'');}
+ if(user.role==='accountant')filters.push('q.employee_id IS NOT NULL');
+ if(employeeId){filters.push('q.employee_id=?');args.push(employeeId);}
+ if(dateFrom){filters.push('q.timestamp>=?');args.push(dateFrom+'T00:00:00');}
+ if(dateTo){
+   const next=new Date(dateTo+'T12:00:00Z');next.setUTCDate(next.getUTCDate()+1);
+   filters.push('q.timestamp<?');args.push(next.toISOString().slice(0,10)+'T00:00:00');
+ }
+ if(kind){filters.push('q.kind=?');args.push(kind);}
+ if(source){filters.push('q.source=?');args.push(source);}
+ if(search){
+   const like='%'+search.replace(/[\\%_]/g,'\\async function deviceAttendance(db,user,request){')+'%';
+   filters.push("(q.employee_name LIKE ? ESCAPE '\\' OR q.employee_code LIKE ? ESCAPE '\\' OR q.device_user_id LIKE ? ESCAPE '\\')");
+   args.push(like,like,like);
+ }
+ const base='FROM ('+combined+') q'+(filters.length?' WHERE '+filters.join(' AND '):'');
+ const countRow=await db.prepare('SELECT COUNT(*) AS n '+base).bind(...args).first();
+ const rows=await db.prepare('SELECT q.id,q.employee_id,q.employee_name,q.employee_code,q.timestamp,q.kind,q.source,q.device_user_id,q.device_event_id,q.corrected '+base+
+   ' ORDER BY q.timestamp DESC,q.id DESC LIMIT ? OFFSET ?').bind(...args,pageSize,(page-1)*pageSize).all();
+ return response({items:rows.results||[],total:Number(countRow?.n||0),page,page_size:pageSize,
+   filters:{from:dateFrom,to:dateTo,source,kind,search,employee_id:employeeId},
+   timezone:'Asia/Aden',read_only:true,financial_impact:false});
+}
+
 async function deviceAttendance(db,user,request){
   if(!['admin','hr','supervisor'].includes(user.role))return reject(403,'ليس لديك صلاحية لعرض بصمات العاملين');
   const u=new URL(request.url);
@@ -683,6 +739,7 @@ export async function onRequest(context) {
     if (path==='me' && method==='GET') return response({user:publicUser(user)});
     if (path==='change-password' && method==='POST') return changePassword(db,user,request);
     if (user.must_change_password) return reject(403,'يجب تغيير كلمة المرور قبل متابعة العمل');
+    if (path==='attendance-register' && method==='GET') return attendanceRegister(db,user,request);
     if (path==='device-attendance' && method==='GET') return deviceAttendance(db,user,request);
     if (path==='device-mappings' && ['GET','POST'].includes(method)) return deviceMappings(db,user,method,request);
     if (path==='employees' && ['GET','POST'].includes(method)) return people(db,user,method,null,request);

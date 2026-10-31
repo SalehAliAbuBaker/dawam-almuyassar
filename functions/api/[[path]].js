@@ -1,6 +1,6 @@
 import { onRequestPost as importMb10Punches } from './device-import.js';
-import {pushConfigured,validatePushSubscription} from './push-web.js';
-import {notifyWorkersAfterSuccessfulSync,sendPersonalTest,ensurePushStorage} from './push-alerts.js';
+import {pushConfigured,validatePushSubscription} from '../../lib/push-web.js';
+import {notifyWorkersAfterSuccessfulSync,sendPersonalTest,ensurePushStorage} from '../../lib/push-alerts.js';
 /* دوام الميسر 0.2.0 — Phase 1 API (Cloudflare Pages Functions + D1).
    Deploy behind a separate staging Cloudflare Pages project; GitHub Pages cannot run Functions.
    Never put SETUP_TOKEN, passwords or D1 credentials in the Git repository. */

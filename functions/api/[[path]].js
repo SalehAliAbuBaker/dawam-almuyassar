@@ -1,6 +1,6 @@
 import { onRequestPost as importMb10Punches } from './device-import.js';
 import {pushConfigured,validatePushSubscription} from './push-web.js';
-import {notifyWorkersAfterSuccessfulSync,sendPersonalTest} from './push-alerts.js';
+import {notifyWorkersAfterSuccessfulSync,sendPersonalTest,ensurePushStorage} from './push-alerts.js';
 /* دوام الميسر 0.2.0 — Phase 1 API (Cloudflare Pages Functions + D1).
    Deploy behind a separate staging Cloudflare Pages project; GitHub Pages cannot run Functions.
    Never put SETUP_TOKEN, passwords or D1 credentials in the Git repository. */
@@ -947,11 +947,15 @@ export async function onRequest(context) {
     if (path==='me' && method==='GET') return response({user:publicUser(user)});
     if (path==='change-password' && method==='POST') return changePassword(db,user,request);
     if (user.must_change_password) return reject(403,'يجب تغيير كلمة المرور قبل متابعة العمل');
-    if (path==='push-config' && method==='GET')return response({
+    if (path==='push-config' && method==='GET'){
+      await ensurePushStorage(db);
+      return response({
       enabled:pushConfigured(env),public_key:pushConfigured(env)?env.VAPID_PUBLIC_KEY:null,
       requires_secure_context:true,mode:'background_push_after_successful_sync'
     });
+    }
     if(path==='push-subscription' && ['GET','POST','DELETE'].includes(method)){
+      await ensurePushStorage(db);
       if(!user.employee_id)return reject(403,'لا بد من ربط حسابك بسجل العامل قبل تفعيل الإشعارات');
       if(method==='GET'){
         const row=await db.prepare('SELECT COUNT(*) AS count FROM push_subscriptions WHERE organization_id=? AND user_id=? AND employee_id=?')

@@ -289,7 +289,7 @@ async function punches(db,user,method,request){
   if (method==='GET'){
     let sql='SELECT p.id,p.employee_id,p.occurred_at AS timestamp,p.kind,p.source,p.created_at FROM punch_events p JOIN employees e ON e.id=p.employee_id WHERE p.organization_id=?',args=[ORG];
     if (user.self_only){sql+=' AND p.employee_id=?';args.push(user.employee_id||'');}
-    if (user.role==='supervisor'){sql+=' AND e.department=?';args.push(user.department_scope||'');}
+    if (user.role==='supervisor'&&!user.self_only){sql+=' AND e.department=?';args.push(user.department_scope||'');}
     sql+=' ORDER BY p.occurred_at DESC LIMIT 2000';
     const rows=await db.prepare(sql).bind(...args).all();
     // MB10 punches remain immutable in device_raw_punches. Expose matched, unambiguous
@@ -297,7 +297,7 @@ async function punches(db,user,method,request){
     let deviceSql="SELECT r.event_fingerprint,r.occurred_at_device AS timestamp,r.punch_code,e.id AS employee_id FROM device_raw_punches r JOIN employees e ON e.organization_id=r.organization_id AND e.device_user_id=r.device_user_id WHERE r.organization_id=? AND r.device_id='mb10-main' AND r.punch_code IN (0,1) AND NOT EXISTS (SELECT 1 FROM punch_events p WHERE p.organization_id=r.organization_id AND p.device_id=r.device_id AND p.device_event_id=r.event_fingerprint)";
     const deviceArgs=[ORG];
     if(user.self_only){deviceSql+=' AND e.id=?';deviceArgs.push(user.employee_id||'');}
-    if(user.role==='supervisor'){deviceSql+=' AND e.department=?';deviceArgs.push(user.department_scope||'');}
+    if(user.role==='supervisor'&&!user.self_only){deviceSql+=' AND e.department=?';deviceArgs.push(user.department_scope||'');}
     deviceSql+=' ORDER BY r.occurred_at_device DESC LIMIT 2000';
     const deviceRows=(await db.prepare(deviceSql).bind(...deviceArgs).all()).results||[];
     const deviceItems=deviceRows.map(r=>({id:'device:'+r.event_fingerprint,employee_id:r.employee_id,
@@ -583,7 +583,7 @@ async function attendanceSummary(db,user,request){
   const deviceArgs=[ORG,date+'T00:00',date+'T23:59:59.999'];
   if(requested){deviceSql+=' AND e.id=?';deviceArgs.push(requested);}
   if(user.self_only){deviceSql+=' AND e.id=?';deviceArgs.push(user.employee_id||'');}
-  if(user.role==='supervisor'){deviceSql+=' AND e.department=?';deviceArgs.push(user.department_scope||'');}
+  if(user.role==='supervisor'&&!user.self_only){deviceSql+=' AND e.department=?';deviceArgs.push(user.department_scope||'');}
   deviceSql+=' ORDER BY r.occurred_at_device ASC LIMIT 10001';
   const deviceRaw=(await db.prepare(deviceSql).bind(...deviceArgs).all()).results||[];
   if(deviceRaw.length>10000)return reject(409,'عدد الحركات كبير؛ يلزم تضييق نطاق الاستعلام');
@@ -778,7 +778,7 @@ async function attendanceRegister(db,user,request){
    "WHEN z.kind='out' AND z.previous_kind='in' THEN 'departure' ELSE 'review' END AS movement_type FROM ("+sequence+") z";
  const filters=[],args=[ORG,ORG];
  if(user.self_only){filters.push('q.employee_id=?');args.push(user.employee_id||'');}
- if(user.role==='supervisor'){filters.push('q.department=? AND q.employee_id IS NOT NULL');args.push(user.department_scope||'');}
+ if(user.role==='supervisor'&&!user.self_only){filters.push('q.department=? AND q.employee_id IS NOT NULL');args.push(user.department_scope||'');}
  if(user.role==='accountant')filters.push('q.employee_id IS NOT NULL');
  if(employeeId){filters.push('q.employee_id=?');args.push(employeeId);}
  if(dateFrom){filters.push('q.timestamp>=?');args.push(dateFrom+'T00:00:00');}

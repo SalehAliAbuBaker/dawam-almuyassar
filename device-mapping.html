@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>مطابقة أرقام البصمة | دوام الميسر</title>
+<style>
+body{font-family:system-ui,Arial,sans-serif;background:#f5f8f5;color:#173f32;margin:0;padding:20px}
+main{max-width:860px;margin:auto;background:#fff;border:1px solid #dce5db;border-radius:16px;padding:24px}
+h1{font-size:1.4rem}p{line-height:1.8}select,button{font:inherit;padding:12px;border-radius:9px;border:1px solid #abbdb2;max-width:100%;width:100%;box-sizing:border-box}
+button{background:#176843;color:#fff;border:none;cursor:pointer}button:disabled{opacity:.5;cursor:not-allowed}
+label{display:block;margin:14px 0 6px;font-weight:600}.info{background:#f0f7f2;padding:10px;border-radius:10px}
+#result{white-space:pre-wrap;margin-top:16px}small{color:#536d60}
+</style></head><body><main>
+<h1>مطابقة العاملين بجهاز MB10</h1>
+<p>شاشة تجريبية للمدير فقط. لا تُغيّر الرواتب أو سجلات الحضور. لا تختَر رقمًا إلا بعد التحقق من هوية صاحبه من سجل العاملين المعتمد.</p>
+<p class="info" id="status">جارٍ تحميل بيانات المطابقة...</p>
+<label for="employee">العامل الموجود في التطبيق</label><select id="employee"><option value="">اختر العامل</option></select>
+<label for="device">رقم البصمة المستورد من الجهاز</label><select id="device"><option value="">اختر الرقم بعد التأكد</option></select>
+<label><input id="confirm" type="checkbox"> أؤكد أنني تحققت من هوية العامل ورقم البصمة في السجل المعتمد.</label>
+<button id="save" disabled>حفظ المطابقة المؤكدة</button>
+<p id="result" role="status"></p>
+<p><small>الأرقام غير المعروفة تبقى دون مطابقة. الأسماء NN-* رمزية، ولا تستخدم لإثبات الهوية.</small></p>
+</main><script>
+const byId=id=>document.getElementById(id);
+const employees=new Map();
+async function refresh(){
+  try{
+    const r=await fetch('/api/device-mappings',{credentials:'same-origin',cache:'no-store'});
+    const data=await r.json();
+    if(!r.ok)throw Error(data.error||'تعذر فتح قائمة المطابقة؛ سجل دخولك مديرًا أولًا');
+    byId('employee').replaceChildren(new Option('اختر العامل',''));
+    byId('device').replaceChildren(new Option('اختر الرقم بعد التأكد',''));
+    employees.clear();
+    for(const e of data.employees){
+      employees.set(e.id,e);
+      byId('employee').add(new Option(e.name+' ('+e.code+')'+(e.device_user_id?' — مرتبط '+e.device_user_id:''),e.id));
+    }
+    for(const d of data.raw_users)byId('device').add(new Option('رقم '+d.device_user_id+' — '+d.punch_count+' حركة',d.device_user_id));
+    byId('status').textContent='العاملون: '+data.employees.length+' | أرقام البصمات ذات الحركات: '+data.raw_users.length;
+  }catch(e){byId('status').textContent=e.message}
+}
+function toggle(){byId('save').disabled=!(byId('confirm').checked&&byId('employee').value&&byId('device').value)}
+for(const id of ['employee','device','confirm'])byId(id).addEventListener('change',toggle);
+byId('save').addEventListener('click',async()=>{
+  const emp=employees.get(byId('employee').value),number=byId('device').value;
+  if(!emp||!number||!byId('confirm').checked)return;
+  if(!confirm('تأكيد ربط '+emp.name+' برقم البصمة '+number+'؟'))return;
+  byId('save').disabled=true;
+  try{
+    const r=await fetch('/api/device-mappings',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({employee_id:emp.id,device_user_id:number,confirm:true})});
+    const d=await r.json();if(!r.ok)throw Error(d.error||'تعذر الحفظ');
+    byId('result').textContent='تم الربط بأمان، دون تغيير الرواتب. الحركات الخام المرتبطة: '+(d.raw_count||0);
+    byId('confirm').checked=false;await refresh();
+  }catch(e){byId('result').textContent=e.message}finally{toggle()}
+});
+refresh();
+</script></body></html>

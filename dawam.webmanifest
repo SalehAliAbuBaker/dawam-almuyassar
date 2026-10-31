@@ -1,0 +1,20 @@
+{
+  "name": "دوام الميسر — للحضور والمستحقات",
+  "short_name": "دوام الميسر",
+  "description": "متابعة الحضور والبصمة والتنبيهات الشخصية",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f3f7f4",
+  "theme_color": "#176546",
+  "dir": "rtl",
+  "lang": "ar",
+  "icons": [
+    {
+      "src": "/offline-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

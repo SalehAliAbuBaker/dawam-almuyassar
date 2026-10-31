@@ -11,7 +11,7 @@ export async function onRequest(context) {
   return new HTMLRewriter()
     .on('head', {
       element(element) {
-        element.append('<script defer src="/app-integration.js?v=0.2.13-dev"></script>', {html: true});
+        element.append('<link rel="manifest" href="/dawam.webmanifest"><script defer src="/app-integration.js?v=0.2.14-dev"></script>', {html: true});
       }
     })
     .transform(res);

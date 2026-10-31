@@ -1,0 +1,35 @@
+<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>جلب البصمة | دوام الميسر</title><style>
+body{font-family:Tahoma,Arial,sans-serif;background:#f6f8f5;color:#143a26;margin:0;padding:20px}
+main{margin:5vh auto;max-width:520px;background:white;border-radius:18px;padding:24px;box-shadow:0 4px 20px #0001}
+h1{font-size:1.45rem}p{line-height:1.9}button{border:0;background:#087847;color:white;border-radius:12px;padding:15px;font-size:1.1rem;width:100%;cursor:pointer}
+button:disabled{opacity:.5;cursor:wait}.info{background:#edf7ef;padding:15px;border-radius:12px;margin:18px 0;white-space:pre-wrap}
+small{color:#526557}a{color:#087847}
+</style></head><body><main><h1>جلب البصمة الآن</h1><p>قراءة حركات جهاز MB10 دون انتظار نهاية الدوام. تبقى البصمات الأصلية محفوظة، ولا تنشأ حركة انصراف تلقائيًا.</p>
+<div class="info" id="state" role="status">جارٍ التحقق من حالة الاتصال...</div><button type="button" id="sync">جلب البصمة الآن</button>
+<p><small>يتطلب تشغيل برنامج الربط على كمبيوتر الشبكة، وصلاحية المدير أو مسؤول الموارد البشرية.</small></p><p><a href="./">العودة إلى دوام الميسر</a></p>
+</main><script>
+const status=document.getElementById('state'),btn=document.getElementById('sync');
+let pending=false;
+const fmt=d=>d?new Date(d+'Z').toLocaleString('ar-YE'):'—';
+async function load(){
+ try{
+ const r=await fetch('/api/mb10-sync',{credentials:'same-origin',cache:'no-store'});
+ const d=await r.json();if(!r.ok)throw Error(d.error||'تعذر الاتصال');
+ const job=d.job;
+ if(!job)status.textContent='لا توجد طلبات جلب سابقة.';
+ else{
+ const labels={pending:'بانتظار برنامج الربط',running:'جارٍ قراءة جهاز البصمة',done:'اكتمل الجلب',error:'تعذر الجلب'};
+ status.textContent='الحالة: '+(labels[job.state]||job.state)+'\nتاريخ الطلب: '+fmt(job.requested_at)+'\nالحركات الجديدة: '+(job.new_count||0)+'\nالحركات الموجودة مسبقًا: '+(job.duplicate_count||0)+(job.error_text?'\n'+job.error_text:'');
+ }
+ pending=!!job&&['pending','running'].includes(job.state);
+ btn.disabled=pending;btn.textContent=pending?'طلب الجلب قيد التنفيذ':'جلب البصمة الآن';
+ }catch(e){status.textContent='تعذر التحقق: '+e.message;btn.disabled=true;}
+}
+btn.addEventListener('click',async()=>{
+ btn.disabled=true;status.textContent='يتم إرسال طلب الجلب...';
+ try{const r=await fetch('/api/mb10-sync',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'});
+ const d=await r.json();if(!r.ok)throw Error(d.error||'فشل الطلب');await load();
+ }catch(e){status.textContent='خطأ: '+e.message;btn.disabled=false;}
+});
+load();setInterval(load,5000);
+</script></body></html>

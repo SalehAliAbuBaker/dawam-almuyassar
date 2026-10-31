@@ -1,12 +1,12 @@
-/* Dawam 0.2.11-dev — non-invasive admin navigation enhancement.
+/* Dawam 0.2.13 — non-invasive admin and personal attendance navigation.
    No access tokens, employee data, or passwords are stored by this script. */
 (() => {
   'use strict';
   const targetUrl='/users-permissions.html';
   const label='إدارة المستخدمين والصلاحيات';
-  let isAdmin=false, checking=false, mounting=false;
+  let isAdmin=false, hasPersonal=false, checking=false, mounting=false;
   const style='display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 14px;border-radius:10px;background:#167a4d;color:white;text-decoration:none;font:600 14px Tahoma,Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.12);max-width:100%;';
-  const htmlLabel=label+' — 0.2.11-dev';
+  const htmlLabel=label+' — 0.2.13';
 
   function makeLink() {
     const el=document.createElement('a');
@@ -16,6 +16,25 @@
     el.textContent=htmlLabel;
     el.setAttribute('style',style);
     return el;
+  }
+  function mountPersonal() {
+    if(!hasPersonal || document.querySelector('.dawam-my-attendance-entry'))return;
+    const link=document.createElement('a');
+    link.href='/my-attendance.html';
+    link.textContent='دوامي وتنبيهاتي';
+    link.className='dawam-my-attendance-entry';
+    link.style.cssText=style;
+    const candidates=document.querySelectorAll('button,a,[role="button"]');
+    let settings=null;
+    for(const node of candidates) {
+      if(node!==link && displayText(node)==='الإعدادات' && isVisible(node)){settings=node;break}
+    }
+    if(settings?.parentElement)settings.insertAdjacentElement('afterend',link);
+    else{
+      link.style.position='fixed';link.style.right='12px';link.style.bottom='16px';
+      link.style.zIndex='999';link.style.fontSize='12px';link.style.padding='8px 11px';
+      document.body.appendChild(link);
+    }
   }
   function displayText(el) {
     return (el.innerText||el.textContent||'').replace(/\s+/g,' ').trim();
@@ -74,16 +93,22 @@
       const resp=await fetch('/api/me',{credentials:'same-origin',cache:'no-store'});
       const data=resp.ok?await resp.json():null;
       isAdmin=!!(data && data.user && data.user.role==='admin');
+      hasPersonal=!!(data && data.user && data.user.employee_id);
       if(!isAdmin)document.querySelectorAll('.dawam-permissions-entry').forEach(el=>el.remove());
       else mount();
+      if(!hasPersonal)document.querySelectorAll('.dawam-my-attendance-entry').forEach(el=>el.remove());
+      else mountPersonal();
     } catch(_) {
-      isAdmin=false;
-      document.querySelectorAll('.dawam-permissions-entry').forEach(el=>el.remove());
+      isAdmin=false;hasPersonal=false;
+      document.querySelectorAll('.dawam-permissions-entry,.dawam-my-attendance-entry').forEach(el=>el.remove());
     } finally {checking=false;}
   }
   const observer=new MutationObserver(() => {
     if(isAdmin && !mounting && !document.querySelector('.dawam-permissions-entry')) {
       requestAnimationFrame(mount);
+    }
+    if(hasPersonal && !document.querySelector('.dawam-my-attendance-entry')) {
+      requestAnimationFrame(mountPersonal);
     }
   });
   function start() {

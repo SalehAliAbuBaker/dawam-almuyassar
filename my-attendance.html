@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="manifest" href="/dawam.webmanifest">
 <title>دوامي وتنبيهاتي | دوام الميسر</title>
 <style>
 :root{font-family:Tahoma,Arial,sans-serif;color:#153d2b;background:#f4f7f5;font-size:15px}
@@ -19,12 +19,12 @@ textarea{width:100%;min-height:90px;resize:vertical}label{display:block;margin:1
 .state{padding:10px;background:#eaf3ed;border-radius:10px;white-space:pre-wrap;margin:10px 0}
 .hidden{display:none}button.secondary{background:#eaf4ec;color:#165237}
 </style></head><body><main>
-<header><h1>دوامي وتنبيهاتي</h1><small>دوام الميسر — 0.2.13 · بياناتي الشخصية فقط</small>
+<header><h1>دوامي وتنبيهاتي</h1><small>دوام الميسر — 0.2.14 · بياناتي الشخصية فقط</small>
 <p class="hint">متابعة الحضور والانصراف والتنبيه عند عدم ظهور بصمة بعد المزامنة، مع إمكانية إرسال بلاغ للمراجعة.</p>
 <div class="row"><a href="./">العودة للتطبيق</a><span id="identity"></span></div>
 </header>
-<section class="panel"><div class="row"><label for="date">التاريخ</label><input type="date" id="date"><button id="load">تحديث الحالة</button><button id="notify" class="secondary">تفعيل التنبيه أثناء فتح الصفحة</button></div>
-<p class="hint">لا يعتبر عدم ظهور البصمة دليلًا على فشل قارئ الجهاز، ولا يترتب عليه خصم تلقائي.</p><div id="message" class="state">جارٍ التحقق من تسجيل الدخول...</div>
+<section class="panel"><div class="row"><label for="date">التاريخ</label><input type="date" id="date"><button id="load">تحديث الحالة</button><button id="notify" class="secondary">تفعيل تنبيهات الجوال بالخلفية</button><button id="disablePush" class="secondary hidden">إيقاف التنبيهات</button><button id="testPush" class="secondary hidden">إرسال تنبيه تجريبي</button></div>
+<p class="hint">التنبيهات تعمل بعد الموافقة وتسجيل اشتراك الجهاز، حتى عند إغلاق الصفحة إذا سمح نظام الجوال بذلك. يلزم اتصال الكمبيوتر بجهاز MB10 ومزامنة ناجحة. عدم ظهور البصمة ليس دليلًا على فشل الماسح ولا يؤدي إلى خصم تلقائي.</p><div id="pushStatus" class="hint" role="status"></div><div id="message" class="state">جارٍ التحقق من تسجيل الدخول...</div>
 <div id="sync" class="hint"></div></section>
 <section class="panel hidden" id="details"><h2>حالة دوامي</h2><div class="grid" id="stats"></div></section>
 <section class="panel"><h2>التنبيهات</h2><div id="alerts"></div></section>
@@ -37,7 +37,7 @@ textarea{width:100%;min-height:90px;resize:vertical}label{display:block;margin:1
 <script>
 'use strict';
 const $=id=>document.getElementById(id),date=$('date'),message=$('message'),alerts=$('alerts');
-let previousWarnings='',notificationsEnabled=false,loadedToday='';
+let loadedToday='',pushBusy=false;
 async function api(url,opts={}){
  const response=await fetch('/api/'+url,{credentials:'same-origin',cache:'no-store',...opts});
  const result=await response.json().catch(()=>({}));
@@ -84,12 +84,7 @@ async function load(){
     $('sync').textContent='';
     message.textContent='يجب ربط هذا الحساب بسجل العامل بواسطة مدير النظام.';
   }
-  const warnings=(data.alerts||[]).filter(a=>a.level==='warning').map(a=>a.code).sort().join('|');
-  const key=(data.date||'')+'|'+warnings;
-  if(notificationsEnabled&&date.value===loadedToday&&warnings&&previousWarnings!==key&&'Notification' in window&&Notification.permission==='granted'){
-    try{new Notification('دوام الميسر — مراجعة البصمة',{body:(data.alerts||[]).filter(a=>a.level==='warning').map(a=>a.title).join('، ')})}catch(_){}
-  }
-  previousWarnings=key;
+
  }catch(e){
   message.textContent='تعذر تحديث بياناتك: '+e.message+'\nإذا انقطع الاتصال، فلا يُعد ذلك دليلًا على إخفاق التبصيم.';
   alerts.replaceChildren();$('sync').textContent='';
@@ -97,12 +92,79 @@ async function load(){
  }finally{$('load').disabled=false}
 }
 $('load').addEventListener('click',load);
+
+function webPushSupported(){
+ return window.isSecureContext&&'serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;
+}
+function base64ToBytes(value){
+ const b64=value.replace(/-/g,'+').replace(/_/g,'/'),bytes=atob(b64.padEnd(Math.ceil(b64.length/4)*4,'='));
+ return Uint8Array.from(bytes,x=>x.charCodeAt(0));
+}
+function sameBytes(a,b){return a&&b&&a.byteLength===b.byteLength&&new Uint8Array(a).every((v,i)=>v===b[i])}
+async function registration(){return navigator.serviceWorker.register('/offline-sw.js',{scope:'/'})}
+async function refreshPushStatus(){
+ if(!webPushSupported()){
+  $('pushStatus').textContent='إشعارات الخلفية غير مدعومة في هذا المتصفح أو يتطلب الموقع اتصال HTTPS.';
+  return;
+ }
+ try{
+  const config=await api('push-config');
+  if(!config.enabled){
+   $('pushStatus').textContent='خدمة التنبيهات تنتظر إعداد مفاتيح Web Push على الخادم.';
+   $('notify').disabled=true;return;
+  }
+  const info=await api('push-subscription'),sw=await registration(),current=await sw.pushManager.getSubscription();
+  const active=!!current&&info.enabled&&Notification.permission==='granted';
+  $('disablePush').classList.toggle('hidden',!active);
+  $('testPush').classList.toggle('hidden',!active);
+  $('notify').classList.toggle('hidden',active);
+  $('pushStatus').textContent=active?'✅ التنبيهات مفعّلة لهذا الجهاز، ويمكن أن تصل والصفحة مغلقة.':'التنبيهات غير مفعّلة لهذا الجهاز.';
+ }catch(e){$('pushStatus').textContent='تعذر التحقق من التنبيهات: '+e.message}
+}
 $('notify').addEventListener('click',async()=>{
- if(!('Notification' in window)){message.textContent='المتصفح لا يدعم إشعارات النظام؛ ستظل التنبيهات ظاهرة داخل الصفحة.';return}
- const permission=await Notification.requestPermission();
- notificationsEnabled=permission==='granted';
- $('notify').textContent=notificationsEnabled?'التنبيه مفعل أثناء فتح الصفحة':'تعذر تفعيل إشعارات المتصفح';
+ if(pushBusy)return;
+ pushBusy=true;$('notify').disabled=true;
+ try{
+  if(!webPushSupported())throw Error('المتصفح أو الاتصال لا يدعم إشعارات الخلفية');
+  const config=await api('push-config');
+  if(!config.enabled||!config.public_key)throw Error('خدمة Web Push لم تجهز بعد في Cloudflare');
+  const permission=await Notification.requestPermission();
+  if(permission!=='granted')throw Error('لم يُمنح إذن إشعارات الجوال');
+  const reg=await registration();await navigator.serviceWorker.ready;
+  const appKey=base64ToBytes(config.public_key);
+  let sub=await reg.pushManager.getSubscription();
+  if(sub&&!sameBytes(sub.options.applicationServerKey,appKey)){
+    await sub.unsubscribe();sub=null;
+  }
+  if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:appKey});
+  await api('push-subscription',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({subscription:sub.toJSON()})});
+  $('pushStatus').textContent='تم تسجيل الجهاز بنجاح. ستصلك تنبيهات الحضور بعد المزامنة حتى لو أغلقت الصفحة، بحسب إعدادات الجوال.';
+  await refreshPushStatus();
+ }catch(e){$('pushStatus').textContent='لم يتم تفعيل التنبيهات: '+e.message}
+ finally{pushBusy=false;$('notify').disabled=false}
 });
+$('disablePush').addEventListener('click',async()=>{
+ $('disablePush').disabled=true;
+ try{
+  const reg=await registration(),sub=await reg.pushManager.getSubscription();
+  if(sub){
+   await api('push-subscription',{method:'DELETE',headers:{'content-type':'application/json'},body:JSON.stringify({endpoint:sub.endpoint})});
+   await sub.unsubscribe();
+  }
+  $('pushStatus').textContent='تم إيقاف إشعارات هذا الجهاز.';
+  await refreshPushStatus();
+ }catch(e){$('pushStatus').textContent='تعذر إيقاف الاشتراك: '+e.message}
+ finally{$('disablePush').disabled=false}
+});
+$('testPush').addEventListener('click',async()=>{
+ $('testPush').disabled=true;
+ try{
+  const r=await api('push-test',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});
+  $('pushStatus').textContent=r.accepted_by_push_service?'وافقت خدمة الإشعارات على رسالة الاختبار. تحقق من ظهورها في إشعارات الجوال.':'لم يتأكد إرسال الاختبار.';
+ }catch(e){$('pushStatus').textContent='فشل إرسال الاختبار: '+e.message}
+ finally{$('testPush').disabled=false}
+});
+
 $('send').addEventListener('click',async()=>{
  $('report').textContent='';
  const detail=$('detail').value.trim();
@@ -117,5 +179,6 @@ $('send').addEventListener('click',async()=>{
 });
 date.addEventListener('change',load);
 load();
+refreshPushStatus();
 setInterval(()=>{if(!document.hidden&&(!date.value||date.value===loadedToday))load()},60000);
 </script></body></html>

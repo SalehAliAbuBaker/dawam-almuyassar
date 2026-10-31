@@ -2,6 +2,20 @@
  * It never attributes a failed finger scan: MB10 only exports recorded events. */
 import {sendWebPush,pushConfigured,validatePushSubscription} from './push-web.js';
 const org='org_main';
+let pushStorageReady=false;
+/* Stage-only idempotent schema provisioning prevents missing migrations when
+ * Cloudflare deploys code before a manual D1 migration run. */
+export async function ensurePushStorage(db){
+ if(pushStorageReady)return;
+ await db.batch([
+  db.prepare("CREATE TABLE IF NOT EXISTS push_subscriptions (id TEXT PRIMARY KEY,organization_id TEXT NOT NULL REFERENCES organizations(id),user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,employee_id TEXT NOT NULL REFERENCES employees(id),endpoint TEXT NOT NULL,p256dh TEXT NOT NULL,auth_secret TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT (datetime('now')),updated_at TEXT NOT NULL DEFAULT (datetime('now')),UNIQUE(organization_id,user_id,endpoint))"),
+  db.prepare("CREATE INDEX IF NOT EXISTS idx_push_active_worker ON push_subscriptions(organization_id,employee_id)"),
+  db.prepare("CREATE TABLE IF NOT EXISTS push_notification_deliveries (organization_id TEXT NOT NULL,subscription_id TEXT NOT NULL REFERENCES push_subscriptions(id) ON DELETE CASCADE,attendance_day TEXT NOT NULL,alert_code TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('sending','sent','failed')),attempts INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL DEFAULT (datetime('now')),updated_at TEXT NOT NULL DEFAULT (datetime('now')),PRIMARY KEY(organization_id,subscription_id,attendance_day,alert_code))"),
+  db.prepare("CREATE INDEX IF NOT EXISTS idx_push_deliveries_recent ON push_notification_deliveries(organization_id,attendance_day)")
+ ]);
+ pushStorageReady=true;
+}
+
 function adenClock(){
  const p=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Aden',
    year:'numeric',month:'2-digit',day:'2-digit',weekday:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'})
@@ -54,6 +68,7 @@ async function dailyEvents(db,employeeId,day){
 }
 export async function notifyWorkersAfterSuccessfulSync(db,env){
  if(!pushConfigured(env))return {configured:false};
+ await ensurePushStorage(db);
  const clock=adenClock();
  if(!checkScheduled(clock.day))return {skipped:'weekly_off'};
  const thursday=new Date(clock.day+'T12:00:00Z').getUTCDay()===4;
@@ -84,6 +99,7 @@ export async function notifyWorkersAfterSuccessfulSync(db,env){
 }
 export async function sendPersonalTest(db,env,user){
  if(!pushConfigured(env))return {error:'خدمة إشعارات الجوال غير مُهيّأة على Cloudflare',status:503};
+ await ensurePushStorage(db);
  const s=await db.prepare("SELECT id,employee_id,endpoint,p256dh,auth_secret FROM push_subscriptions WHERE organization_id=? AND user_id=? AND employee_id=? ORDER BY updated_at DESC LIMIT 1")
    .bind(user.organization_id,user.id,user.employee_id).first();
  if(!s)return {error:'فعّل إشعارات الجهاز أولًا',status:409};

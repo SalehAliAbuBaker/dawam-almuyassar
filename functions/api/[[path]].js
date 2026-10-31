@@ -230,6 +230,10 @@ async function updateUser(db, actor, id, request) {
     .bind(role,active,employeeId,department,id,ORG).run();
   if (!active || role!==target.role || employeeId!==target.employee_id || department!==target.department_scope) {
     await db.prepare('DELETE FROM sessions WHERE user_id=?').bind(id).run();
+    if(!active || employeeId!==target.employee_id){
+      await ensurePushStorage(db);
+      await db.prepare('DELETE FROM push_subscriptions WHERE organization_id=? AND user_id=?').bind(ORG,id).run();
+    }
   }
   await audit(db,actor,'user.updated','user',id,{role,active});
   return response({ok:true});

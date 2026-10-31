@@ -1,4 +1,6 @@
 import { onRequestPost as importMb10Punches } from './device-import.js';
+import {pushConfigured,validatePushSubscription} from './push-web.js';
+import {notifyWorkersAfterSuccessfulSync,sendPersonalTest} from './push-alerts.js';
 /* دوام الميسر 0.2.0 — Phase 1 API (Cloudflare Pages Functions + D1).
    Deploy behind a separate staging Cloudflare Pages project; GitHub Pages cannot run Functions.
    Never put SETUP_TOKEN, passwords or D1 credentials in the Git repository. */
@@ -852,7 +854,7 @@ export async function onRequest(context) {
   if (!db) return reject(503,'لم يتم ربط قاعدة D1؛ التشغيل الآمن غير متاح');
   const path=new URL(request.url).pathname.replace(/^\/api\/?/,'').replace(/\/+$/,'');
   const method=request.method.toUpperCase();
-  if (!['GET','POST','PUT','PATCH'].includes(method)) return reject(405,'طريقة غير مدعومة');
+  if (!['GET','POST','PUT','PATCH','DELETE'].includes(method)) return reject(405,'طريقة غير مدعومة');
   if (method!=='GET'){
     const origin=request.headers.get('origin'),site=request.headers.get('sec-fetch-site');
     if (origin && origin!==new URL(request.url).origin) return reject(403,'طلب من مصدر غير مصرح به');
@@ -912,18 +914,31 @@ export async function onRequest(context) {
         return response({job:changed.meta?.changes?{id:job.id}:null});
       }
       const data=await bodyJson(request);
+      // Local computer may schedule automatic synchronization (never a remote device read).
+      if(data.action==='schedule'){
+        const running=await db.prepare("SELECT id,state FROM mb10_sync_jobs WHERE organization_id=? AND state IN ('pending','running') ORDER BY requested_at DESC LIMIT 1").bind(ORG).first();
+        if(running)return response({job:running,already_pending:true});
+        const id=uuid();
+        await db.prepare("INSERT INTO mb10_sync_jobs(id,organization_id,requested_by,state) VALUES (?,?,'local-agent','pending')").bind(id,ORG).run();
+        return response({job:{id,state:'pending'},scheduled:true},202);
+      }
       if(typeof data.id!=='string'||!['success','error'].includes(data.status)) return reject(400,'بيانات غير صالحة');
       const state=data.status==='success'?'done':'error';
       const count=(x)=>Number.isSafeInteger(x)&&x>=0&&x<=1000000?x:0;
       const changed=await db.prepare("UPDATE mb10_sync_jobs SET state=?,finished_at=datetime('now'),new_count=?,duplicate_count=?,error_text=? WHERE id=? AND organization_id=? AND state='running'").bind(state,count(data.inserted),count(data.duplicates),state==='error'?str(data.error,300):null,data.id,ORG).run();
       if(!changed.meta?.changes) return reject(409,'المهمة غير متاحة');
-      return response({ok:true});
+      if(state==='done' && pushConfigured(env)){
+        context.waitUntil(notifyWorkersAfterSuccessfulSync(db,env).catch(error=>{
+          console.error('worker notification dispatch failed',String(error?.message||'unknown').slice(0,140));
+        }));
+      }
+      return response({ok:true,notifications_queued:state==='done'&&pushConfigured(env)});
     }
     if (path==='device-import') {
       if (method!=='POST') return reject(405,'طريقة غير مدعومة؛ استخدم POST');
       return importMb10Punches(context);
     }
-    if (path==='status' && method==='GET') return response({setupRequired:await setupRequired(db),version:'0.2.13'});
+    if (path==='status' && method==='GET') return response({setupRequired:await setupRequired(db),version:'0.2.14'});
     if (path==='setup' && method==='POST') return initialSetup(db,env,request);
     if (path==='login' && method==='POST') return login(db,request);
     const user=await sessionUser(db,request);
@@ -932,6 +947,44 @@ export async function onRequest(context) {
     if (path==='me' && method==='GET') return response({user:publicUser(user)});
     if (path==='change-password' && method==='POST') return changePassword(db,user,request);
     if (user.must_change_password) return reject(403,'يجب تغيير كلمة المرور قبل متابعة العمل');
+    if (path==='push-config' && method==='GET')return response({
+      enabled:pushConfigured(env),public_key:pushConfigured(env)?env.VAPID_PUBLIC_KEY:null,
+      requires_secure_context:true,mode:'background_push_after_successful_sync'
+    });
+    if(path==='push-subscription' && ['GET','POST','DELETE'].includes(method)){
+      if(!user.employee_id)return reject(403,'لا بد من ربط حسابك بسجل العامل قبل تفعيل الإشعارات');
+      if(method==='GET'){
+        const row=await db.prepare('SELECT COUNT(*) AS count FROM push_subscriptions WHERE organization_id=? AND user_id=? AND employee_id=?')
+          .bind(user.organization_id,user.id,user.employee_id).first();
+        return response({enabled:Number(row?.count||0)>0,devices:Number(row?.count||0)});
+      }
+      if(method==='DELETE'){
+        const b=await bodyJson(request);
+        if(typeof b.endpoint!=='string'||b.endpoint.length>2048)return reject(400,'عنوان الاشتراك غير صحيح');
+        const id=await hashText(b.endpoint);
+        await db.prepare('DELETE FROM push_subscriptions WHERE id=? AND organization_id=? AND user_id=?')
+          .bind(id,user.organization_id,user.id).run();
+        return response({ok:true,removed:true});
+      }
+      if(!pushConfigured(env))return reject(503,'يجب إعداد مفاتيح إشعارات Web Push في Cloudflare');
+      const b=await bodyJson(request),sub=b.subscription;
+      if(!validatePushSubscription(sub))return reject(400,'اشتراك إشعارات غير صالح');
+      const employee=await db.prepare('SELECT id FROM employees WHERE organization_id=? AND id=? AND status=?')
+        .bind(user.organization_id,user.employee_id,'active').first();
+      if(!employee)return reject(403,'سجل العامل المرتبط غير نشط أو غير موجود');
+      const id=await hashText(sub.endpoint);
+      const existing=await db.prepare('SELECT COUNT(*) AS n FROM push_subscriptions WHERE organization_id=? AND user_id=? AND id<>?')
+        .bind(user.organization_id,user.id,id).first();
+      if(Number(existing?.n||0)>=3)return reject(409,'تم بلوغ ثلاثة أجهزة للإشعارات؛ أوقف الاشتراك من أحدها أولًا');
+      await db.prepare("INSERT INTO push_subscriptions(id,organization_id,user_id,employee_id,endpoint,p256dh,auth_secret) VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET organization_id=excluded.organization_id,user_id=excluded.user_id,employee_id=excluded.employee_id,endpoint=excluded.endpoint,p256dh=excluded.p256dh,auth_secret=excluded.auth_secret,updated_at=datetime('now')")
+        .bind(id,user.organization_id,user.id,user.employee_id,sub.endpoint,sub.keys.p256dh,sub.keys.auth).run();
+      return response({ok:true,subscribed:true,employee_scoped:true},201);
+    }
+    if(path==='push-test' && method==='POST'){
+      if(!user.employee_id)return reject(403,'لا يوجد عامل مرتبط بحسابك');
+      const result=await sendPersonalTest(db,env,user);
+      return result.error?reject(result.status||503,result.error):response(result);
+    }
     if (path==='my-attendance' && method==='GET') return myAttendance(db,user,request);
     if (path==='my-punch-report' && method==='POST') return myPunchReport(db,user,request);
     if (path==='attendance-register' && method==='GET') return attendanceRegister(db,user,request);

@@ -781,6 +781,42 @@ export async function onRequest(context) {
     if (site && !['same-origin','none'].includes(site)) return reject(403,'طلب من موقع آخر');
   }
   try {
+    if (path==='mb10-sync' && method==='GET') {
+      const user=await sessionUser(db,request);
+      if(!user) return reject(401,'يرجى تسجيل الدخول');
+      if(user.role!=='admin' && user.role!=='hr') return reject(403,'ليس لديك صلاحية');
+      const last=await db.prepare("SELECT id,state,requested_at,started_at,finished_at,new_count,duplicate_count,error_text FROM mb10_sync_jobs WHERE organization_id=? ORDER BY requested_at DESC LIMIT 1").bind(ORG).first();
+      return response({job:last||null});
+    }
+    if (path==='mb10-sync' && method==='POST') {
+      const user=await sessionUser(db,request);
+      if(!user) return reject(401,'يرجى تسجيل الدخول');
+      if(user.role!=='admin' && user.role!=='hr') return reject(403,'ليس لديك صلاحية');
+      if(user.must_change_password) return reject(403,'يجب تغيير كلمة المرور');
+      const existing=await db.prepare("SELECT id,state FROM mb10_sync_jobs WHERE organization_id=? AND state IN ('pending','running') ORDER BY requested_at DESC LIMIT 1").bind(ORG).first();
+      if(existing) return response({id:existing.id,state:existing.state,already_pending:true});
+      const id=uuid();
+      await db.prepare("INSERT INTO mb10_sync_jobs(id,organization_id,requested_by,state) VALUES (?,?,?,'pending')").bind(id,ORG,user.id).run();
+      return response({id,state:'pending'},202);
+    }
+    if (path==='mb10-agent' && ['GET','POST'].includes(method)) {
+      const secret=env.MB10_IMPORT_TOKEN;
+      const token=(request.headers.get('authorization')||'').replace(/^Bearer /,'');
+      if(typeof secret!=='string'||secret.length<32||!safeEquals(token,secret)) return reject(401,'غير مصرح');
+      if(method==='GET') {
+        const job=await db.prepare("SELECT id,state FROM mb10_sync_jobs WHERE organization_id=? AND state='pending' ORDER BY requested_at ASC LIMIT 1").bind(ORG).first();
+        if(!job) return response({job:null});
+        const changed=await db.prepare("UPDATE mb10_sync_jobs SET state='running',started_at=datetime('now') WHERE id=? AND state='pending'").bind(job.id).run();
+        return response({job:changed.meta?.changes?{id:job.id}:null});
+      }
+      const data=await bodyJson(request);
+      if(typeof data.id!=='string'||!['success','error'].includes(data.status)) return reject(400,'بيانات غير صالحة');
+      const state=data.status==='success'?'done':'error';
+      const count=(x)=>Number.isSafeInteger(x)&&x>=0&&x<=1000000?x:0;
+      const changed=await db.prepare("UPDATE mb10_sync_jobs SET state=?,finished_at=datetime('now'),new_count=?,duplicate_count=?,error_text=? WHERE id=? AND organization_id=? AND state='running'").bind(state,count(data.inserted),count(data.duplicates),state==='error'?str(data.error,300):null,data.id,ORG).run();
+      if(!changed.meta?.changes) return reject(409,'المهمة غير متاحة');
+      return response({ok:true});
+    }
     if (path==='device-import') {
       if (method!=='POST') return reject(405,'طريقة غير مدعومة؛ استخدم POST');
       return importMb10Punches(context);

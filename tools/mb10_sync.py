@@ -41,7 +41,13 @@ def main():
     parser.add_argument('--from-date', help='YYYY-MM-DD; only export movements from this date')
     parser.add_argument('--upload', action='store_true', help='Send raw punches to configured HTTPS stage API')
     parser.add_argument('--agent', action='store_true', help='Listen for requests from Dawam app')
+    parser.add_argument('--automatic-minutes', type=int, default=0,
+                        help='When running --agent, auto-sync at this interval (e.g. 10); zero disables')
     args = parser.parse_args()
+    if args.automatic_minutes < 0 or args.automatic_minutes > 1440:
+        parser.error('--automatic-minutes must be between 0 and 1440')
+    if args.automatic_minutes and not args.agent:
+        parser.error('--automatic-minutes requires --agent')
     password = int(os.environ.get('MB10_COM_PASSWORD', '0'))
     if args.agent:
         return agent(args, password)
@@ -89,9 +95,18 @@ def agent(args, password):
     if not base.startswith('https://') or len(token)<32:
         raise SystemExit('Missing DAWAM_STAGE_URL (https) / MB10_IMPORT_TOKEN (32+ chars)')
     print('MB10 sync agent is running. Keep this window open. Ctrl+C to stop.',flush=True)
+    if args.automatic_minutes:
+        print(f'Automatic read-only synchronization every {args.automatic_minutes} minutes is enabled.', flush=True)
+    last_auto = None
     while True:
         job_id=None
         try:
+            # The office computer must remain running and connected to MB10/LAN.
+            # The cloud cannot reach private LAN addresses by itself.
+            if args.automatic_minutes and (last_auto is None or
+                    time.monotonic()-last_auto >= args.automatic_minutes*60):
+                request_json(base, token, 'mb10-agent', {'action':'schedule'})
+                last_auto=time.monotonic()
             data=request_json(base,token,'mb10-agent')
             job=(data.get('job') or {})
             job_id=job.get('id')

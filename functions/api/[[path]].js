@@ -597,8 +597,12 @@ async function deviceAttendance(db,user,request){
   weekdayOf(date);
   const employeeId=str(u.searchParams.get('employee_id'),80);
   const sql=["SELECT r.event_fingerprint,r.device_user_id,r.occurred_at_device,r.status_code,r.punch_code,",
-   "e.id AS employee_id,e.name AS employee_name,e.code AS employee_code",
+   "COALESCE(c.employee_id,e.id) AS employee_id,COALESCE(ec.name,e.name) AS employee_name,COALESCE(ec.code,e.code) AS employee_code,",
+    "c.occurred_at AS effective_timestamp,c.kind AS effective_kind,",
+   "c.id AS correction_id",
    "FROM device_raw_punches r LEFT JOIN employees e ON e.organization_id=r.organization_id AND e.device_user_id=r.device_user_id",
+   "LEFT JOIN punch_events c ON c.organization_id=r.organization_id AND c.device_id=r.device_id AND c.device_event_id=r.event_fingerprint",
+   "LEFT JOIN employees ec ON ec.organization_id=r.organization_id AND ec.id=c.employee_id",
    "WHERE r.organization_id=? AND r.device_id=? AND r.occurred_at_device>=? AND r.occurred_at_device<?"];
   const args=[ORG,'mb10-main',date+'T00:00:00',date+'T23:59:59'];
   if(employeeId){sql.push('AND e.id=?');args.push(employeeId)}
@@ -607,9 +611,9 @@ async function deviceAttendance(db,user,request){
   const rows=(await db.prepare(sql.join(' ')).bind(...args).all()).results||[];
   if(rows.length>2000)return reject(409,'عدد الحركات كبير؛ يرجى تضييق البحث');
   const result=rows.map(r=>({
-    ...r,kind:r.punch_code===0?'in':r.punch_code===1?'out':'other',
+    ...r,kind:r.effective_kind||(r.punch_code===0?'in':r.punch_code===1?'out':'other'),
     matched:!!r.employee_id,
-    requires_review:!r.employee_id||![0,1].includes(r.punch_code)
+    requires_review:!r.employee_id||(!r.correction_id&&![0,1].includes(r.punch_code))
   }));
   return response({date,items:result,matched_count:result.filter(r=>r.matched).length,
     unmatched_count:result.filter(r=>!r.matched).length,

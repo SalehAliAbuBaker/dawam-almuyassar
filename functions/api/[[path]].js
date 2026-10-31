@@ -1,3 +1,4 @@
+import { onRequestPost as importMb10Punches } from './device-import.js';
 /* دوام الميسر 0.2.0 — Phase 1 API (Cloudflare Pages Functions + D1).
    Deploy behind a separate staging Cloudflare Pages project; GitHub Pages cannot run Functions.
    Never put SETUP_TOKEN, passwords or D1 credentials in the Git repository. */
@@ -465,6 +466,10 @@ export async function onRequest(context) {
     if (site && !['same-origin','none'].includes(site)) return reject(403,'طلب من موقع آخر');
   }
   try {
+    if (path==='device-import') {
+      if (method!=='POST') return reject(405,'طريقة غير مدعومة؛ استخدم POST');
+      return importMb10Punches(context);
+    }
     if (path==='status' && method==='GET') return response({setupRequired:await setupRequired(db),version:'0.2.7'});
     if (path==='setup' && method==='POST') return initialSetup(db,env,request);
     if (path==='login' && method==='POST') return login(db,request);

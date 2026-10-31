@@ -332,6 +332,46 @@ async function correctManualPunch(db,user,id,request){
 
 /* Administrator-only selective removal of manual test punches.
    Never touches MB10 raw logs, imported/device events, or nonselected records. */
+
+/* Correct MB10 device records without mutating immutable raw data.
+   Corrected records live in punch_events and override the matching raw fingerprint. */
+async function correctDevicePunch(db,user,request){
+ if(!canEditPeople(user))return reject(403,'تصحيح بصمات الجهاز للمدير وشؤون العاملين فقط');
+ const b=await bodyJson(request);
+ const fingerprint=str(b.event_fingerprint,64);
+ if(!/^[a-f0-9]{64}$/.test(fingerprint))return reject(400,'معرف البصمة غير صالح');
+ const reason=str(b.reason,500);
+ if(reason.length<5)return reject(400,'اكتب سبب التصحيح بخمسة أحرف على الأقل');
+ const employeeId=str(b.employee_id,80),timestamp=str(b.timestamp,35),kind=str(b.kind,10);
+ if(!/^[0-9]{4}-[0-9]{2}-[0-9]{2}T(?:[01][0-9]|2[0-3]):[0-5][0-9](?::[0-5][0-9])?$/.test(timestamp)||!KINDS.has(kind))
+   return reject(400,'التاريخ أو نوع الحركة غير صالح');
+ const parsed=timestamp.length===16?timestamp+':00':timestamp, check=new Date(parsed+'Z');
+ if(Number.isNaN(check.getTime())||check.toISOString().slice(0,19)!==parsed)return reject(400,'تاريخ غير صحيح');
+ const raw=await db.prepare("SELECT event_fingerprint,device_user_id,occurred_at_device,punch_code FROM device_raw_punches WHERE organization_id=? AND device_id='mb10-main' AND event_fingerprint=?")
+   .bind(ORG,fingerprint).first();
+ if(!raw)return reject(404,'البصمة الأصلية غير موجودة');
+ const employee=await db.prepare('SELECT id,name FROM employees WHERE organization_id=? AND id=?').bind(ORG,employeeId).first();
+ if(!employee)return reject(404,'العامل غير موجود');
+ const existing=await db.prepare("SELECT id,employee_id,occurred_at,kind FROM punch_events WHERE organization_id=? AND device_id='mb10-main' AND device_event_id=?")
+   .bind(ORG,fingerprint).first();
+ const old=existing?{employee_id:existing.employee_id,timestamp:existing.occurred_at,kind:existing.kind}:
+   {device_user_id:raw.device_user_id,timestamp:raw.occurred_at_device,punch_code:raw.punch_code};
+ if(existing&&existing.employee_id===employeeId&&existing.occurred_at===timestamp&&existing.kind===kind)return reject(400,'لم تتغير بيانات الحركة');
+ const auditStmt=db.prepare('INSERT INTO audit_events(id,organization_id,actor_user_id,event_type,entity_type,entity_id,details_json) VALUES (?,?,?,?,?,?,?)')
+   .bind(uuid(),ORG,user.id,'punch.device_corrected','punch',fingerprint,JSON.stringify({before:old,after:{employee_id:employeeId,timestamp,kind},reason}));
+ if(existing){
+   const updated=db.prepare("UPDATE punch_events SET employee_id=?,occurred_at=?,kind=?,correction_reason=? WHERE id=? AND organization_id=? AND device_id='mb10-main' AND device_event_id=? AND employee_id=? AND occurred_at=? AND kind=?")
+     .bind(employeeId,timestamp,kind,reason,existing.id,ORG,fingerprint,existing.employee_id,existing.occurred_at,existing.kind);
+   const result=await db.batch([updated,auditStmt]);
+   if(result[0].meta?.changes!==1)return reject(409,'تغيرت الحركة، حدث البيانات وأعد المحاولة');
+ }else{
+   const created=db.prepare("INSERT INTO punch_events(id,organization_id,employee_id,occurred_at,kind,source,device_id,device_event_id,correction_reason,entered_by) VALUES (?,?,?,?,?,'device','mb10-main',?,?,?)")
+     .bind(uuid(),ORG,employeeId,timestamp,kind,fingerprint,reason,user.id);
+   await db.batch([created,auditStmt]);
+ }
+ return response({corrected:true,event_fingerprint:fingerprint,source:'device',original_preserved:true});
+}
+
 async function manualPunchCleanup(db,user,method,request){
   if(user.role!=='admin')return reject(403,'هذه العملية لمدير النظام فقط');
   const u=new URL(request.url);
@@ -608,6 +648,7 @@ export async function onRequest(context) {
     if (path==='device-mappings' && ['GET','POST'].includes(method)) return deviceMappings(db,user,method,request);
     if (path==='employees' && ['GET','POST'].includes(method)) return people(db,user,method,null,request);
     if (path.startsWith('employees/') && method==='PUT') return people(db,user,method,path.slice('employees/'.length),request);
+    if (path==='device-punch-correction' && method==='POST') return correctDevicePunch(db,user,request);
     if (path==='manual-punch-cleanup' && ['GET','POST'].includes(method)) return manualPunchCleanup(db,user,method,request);
     if (path==='punches' && ['GET','POST'].includes(method)) return punches(db,user,method,request);
     if (path.startsWith('punches/') && method==='PUT') return correctManualPunch(db,user,path.slice('punches/'.length),request);

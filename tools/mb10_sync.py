@@ -1,0 +1,79 @@
+"""Read-only ZKTeco MB10 collection and optional HTTPS import into Dawam stage.
+Python 3.14 / pyzk 0.9. No device deletions, edits, clock changes or disable.
+Configured via environment variables; secrets are never committed.
+"""
+import argparse
+import hashlib
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+from datetime import datetime
+from zk import ZK
+
+def collect(ip, port, password):
+    zk = ZK(ip, port=port, timeout=15, password=password, force_udp=False, ommit_ping=False)
+    connection = zk.connect()
+    try:
+        entries = connection.get_attendance() or []
+        unique = {}
+        for rec in entries:
+            device_user_id = str(rec.user_id)
+            dt = rec.timestamp.strftime('%Y-%m-%dT%H:%M:%S')
+            status = rec.status if isinstance(rec.status, int) and 0 <= rec.status <= 255 else None
+            punch = rec.punch if isinstance(rec.punch, int) and 0 <= rec.punch <= 255 else None
+            # Stable fingerprint independent of the order returned by the device.
+            key = json.dumps([device_user_id, dt, status, punch], ensure_ascii=False, separators=(',', ':'))
+            fingerprint = hashlib.sha256(('mb10-main|' + key).encode('utf-8')).hexdigest()
+            unique[fingerprint] = dict(device_user_id=device_user_id, occurred_at_device=dt,
+                                       status_code=status, punch_code=punch,
+                                       event_fingerprint=fingerprint)
+        return sorted(unique.values(), key=lambda x: (x['occurred_at_device'], x['device_user_id']))
+    finally:
+        connection.disconnect()
+
+def main():
+    parser = argparse.ArgumentParser(description="ZKTeco MB10 -> Dawam stage")
+    parser.add_argument('--ip', default='192.168.0.121')
+    parser.add_argument('--port', type=int, default=4370)
+    parser.add_argument('--from-date', help='YYYY-MM-DD; only export movements from this date')
+    parser.add_argument('--upload', action='store_true', help='Send raw punches to configured HTTPS stage API')
+    args = parser.parse_args()
+    password = int(os.environ.get('MB10_COM_PASSWORD', '0'))
+    items = collect(args.ip, args.port, password)
+    if args.from_date:
+        datetime.strptime(args.from_date, '%Y-%m-%d')
+        items = [x for x in items if x['occurred_at_device'][:10] >= args.from_date]
+    print(f"Device read OK; selected unique punches: {len(items)}")
+    if items:
+        print('Latest:', items[-1]['device_user_id'], items[-1]['occurred_at_device'])
+    if not args.upload:
+        print('Read-only mode: nothing uploaded. Use --upload once configured.')
+        return
+    base = os.environ.get('DAWAM_STAGE_URL', '').rstrip('/')
+    token = os.environ.get('MB10_IMPORT_TOKEN', '')
+    if not base.startswith('https://') or len(token) < 32:
+        raise SystemExit('Set DAWAM_STAGE_URL (https) and MB10_IMPORT_TOKEN (32+ characters) in local environment.')
+    total = 0
+    duplicates = 0
+    for offset in range(0, len(items), 100):
+        batch = items[offset:offset + 100]
+        data = json.dumps({'items': batch}).encode('utf-8')
+        request = urllib.request.Request(base + '/api/device-import', data=data, method='POST',
+            headers={'Content-Type':'application/json', 'Authorization':'Bearer '+token})
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                result = json.load(response)
+        except urllib.error.HTTPError as exc:
+            raise SystemExit(f'Import HTTP {exc.code}; check stage endpoint, token, and D1 migration.') from None
+        total += result.get('inserted', 0)
+        duplicates += result.get('duplicates', 0)
+    print(f'Upload completed. New: {total}; existing: {duplicates}; selected: {len(items)}')
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Exception as exc:
+        print('Error:', exc, file=sys.stderr)
+        sys.exit(1)

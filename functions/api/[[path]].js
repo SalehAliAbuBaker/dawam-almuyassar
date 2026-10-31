@@ -645,6 +645,12 @@ async function myAttendance(db,user,request){
    if(syncedEnd)add('checkout_not_recorded','warning','بصمة انصراف غير ظاهرة','لم تظهر بصمة انصراف بعد مزامنة الجهاز؛ يمكنك إرسال بلاغ للإدارة.');
    else add('checkout_pending','info','بانتظار مزامنة الانصراف','لا يمكن الجزم بعدم تسجيل البصمة قبل اكتمال المزامنة.');
   }
+  if(day.first_in && day.late_minutes>0)
+    add('late_arrival','info','حضور بعد بدء الدوام','حضورك متأخر وفق السجل الحالي بمقدار '+day.late_minutes+' دقيقة، وتظل البيانات قابلة للمراجعة.');
+  if(day.last_out && day.early_exit_minutes>0)
+    add('early_exit','warning','انصراف مبكر أو عودة غير مسجلة','آخر حركة خروج قبل نهاية الدوام بنحو '+day.early_exit_minutes+' دقيقة؛ تحقق من تسجيل العودة أو قدم بلاغًا.');
+  if(day.absence_minutes>0)
+    add('midday_absence','info','خروج وعودة أثناء الدوام','مدة الانقطاع المسجلة بين الخروج والعودة '+day.absence_minutes+' دقيقة، وتحتاج إلى مراجعة الاعتماد.');
   if(row?.state==='error')add('sync_error','info','تعذرت مزامنة الجهاز','البيانات قد تكون متأخرة؛ تحقق مع الإدارة.');
  }
  if(!alerts.length)add('clear','success','لا توجد تنبيهات حاليًا','التسجيل ظاهر ضمن آخر البيانات المتاحة؛ فشل قراءة الإصبع لا يمكن رصده مباشرة من هذا السجل.');

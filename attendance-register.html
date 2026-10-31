@@ -62,7 +62,8 @@ body.embedded .pager{padding-bottom:24px}
 <label>نوع الحركة<select id="kind"><option value="">جميع الحركات</option><option value="in">دخول</option><option value="out">انصراف</option><option value="permission">استعذار أثناء الدوام</option><option value="other">غير محدد</option></select></label>
 <label>المصدر<select id="source"><option value="">جميع المصادر</option><option value="device">جهاز MB10</option><option value="manual">يدوي</option><option value="import">استيراد</option><option value="demo">تجريبي</option></select></label>
 </div>
-<div class="actions"><button id="apply">عرض النتائج</button><button id="reset" class="secondary">إلغاء الفلاتر</button></div>
+<div class="actions"><button id="apply">عرض النتائج</button><button id="reloadBtn" class="secondary" type="button">↻ تحديث البصمات من الخادم</button><button id="reset" class="secondary">إلغاء الفلاتر</button></div>
+<p class="muted" style="font-size:.83rem;margin:5px 0 10px">يحدّث هذا الزر الحركات المحفوظة على Cloudflare فقط. جلب بصمات جديدة من جهاز MB10 نفسه يتم عبر برنامج الربط على الكمبيوتر، ولا يتم من المتصفح مباشرة.</p>
 <div id="status" class="status" role="status">اختر خيارات البحث ثم اضغط «عرض النتائج».</div>
 </section>
 <section class="panel">
@@ -125,6 +126,7 @@ $('total').textContent='عدد الحركات: '+total;$('shown').textContent='�
 $('prev').disabled=page<=1;$('next').disabled=page*PAGE_SIZE>=total;
 message('تم عرض '+list.length+' حركة من '+total+' حركة مطابقة.')}catch(e){message(e.message,true)}finally{loading=false;$('apply').disabled=false}}
 $('apply').onclick=()=>load(true);
+$('reloadBtn').onclick=()=>load(true);
 $('search').addEventListener('keydown',e=>{if(e.key==='Enter')load(true)});
 $('reset').onclick=()=>{for(const id of ['search','from','to','employee','kind','source'])$(id).value='';load(true)};
 $('prev').onclick=()=>{if(page>1){page--;load(false)}};

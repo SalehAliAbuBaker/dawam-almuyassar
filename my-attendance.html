@@ -111,9 +111,10 @@ function setStats(day,biometric={}){
  const status=unclassified?'بصمة مسجلة — النوع غير مؤكد':
   ({completed:'مكتمل',missing_checkout:'انصراف غير مؤكد',no_checkin:'لا يوجد حضور مصنّف',weekly_off:'إجازة أسبوعية'})[day.status]||day.status;
  const metrics=[
-   ['أول حركة بصمة',fmt(biometric.first_recorded)],
-   ['آخر حركة بصمة',fmt(biometric.last_recorded)],
-   ['عدد الحركات المسجلة',biometric.total_movements??0],
+   ['أول بصمة من MB10',fmt(biometric.first_device_recorded)],
+   ['آخر بصمة من MB10',fmt(biometric.last_device_recorded)],
+   ['عدد بصمات الجهاز',biometric.device_movements??0],
+   ['إجمالي الحركات في السجل',biometric.total_movements??0],
    ['أول حضور مصنّف',fmt(day.first_in)],['آخر انصراف مصنّف',fmt(day.last_out)],
    ['حالة الحضور',status]
  ];

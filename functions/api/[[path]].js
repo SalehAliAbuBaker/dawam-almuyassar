@@ -762,14 +762,14 @@ async function attendanceRegister(db,user,request){
  const combined=[
   "SELECT p.id,p.employee_id,e.name AS employee_name,e.code AS employee_code,e.department,",
   "p.occurred_at AS timestamp,p.kind,p.source,r.device_user_id,p.device_event_id,",
-  "CASE WHEN p.source='device' AND r.event_fingerprint IS NOT NULL THEN 1 ELSE 0 END AS corrected",
+  "CASE WHEN p.source='device' AND r.event_fingerprint IS NOT NULL THEN 1 ELSE 0 END AS corrected,r.punch_code AS punch_code",
   "FROM punch_events p JOIN employees e ON e.organization_id=p.organization_id AND e.id=p.employee_id",
   "LEFT JOIN device_raw_punches r ON r.organization_id=p.organization_id AND r.device_id=p.device_id AND r.event_fingerprint=p.device_event_id",
   "WHERE p.organization_id=? UNION ALL",
   "SELECT 'device:'||r.event_fingerprint AS id,e.id AS employee_id,e.name AS employee_name,",
   "e.code AS employee_code,e.department,r.occurred_at_device AS timestamp,",
   "CASE r.punch_code WHEN 0 THEN 'in' WHEN 1 THEN 'out' ELSE 'other' END AS kind,",
-  "'device' AS source,r.device_user_id,r.event_fingerprint AS device_event_id,0 AS corrected",
+  "'device' AS source,r.device_user_id,r.event_fingerprint AS device_event_id,0 AS corrected,r.punch_code AS punch_code",
   "FROM device_raw_punches r LEFT JOIN employees e ON e.organization_id=r.organization_id AND e.device_user_id=r.device_user_id",
   "WHERE r.organization_id=? AND r.device_id='mb10-main'",
   "AND NOT EXISTS(SELECT 1 FROM punch_events p WHERE p.organization_id=r.organization_id AND p.device_id=r.device_id AND p.device_event_id=r.event_fingerprint)"
@@ -783,7 +783,7 @@ async function attendanceRegister(db,user,request){
  const close="(CASE WHEN strftime('%w',substr(z.timestamp,1,10))='4' THEN '"+sch.thursday+"' ELSE '"+sch.end+"' END)";
  const exit="z.kind='out' AND z.previous_kind='in' AND z.next_kind='in' AND substr(z.timestamp,12,5)>='"+sch.start+"' AND substr(z.timestamp,12,5)<"+close+" AND z.next_timestamp>z.timestamp";
  const back="z.kind='in' AND z.previous_kind='out' AND z.second_previous_kind='in' AND substr(z.previous_timestamp,12,5)>='"+sch.start+"' AND substr(z.previous_timestamp,12,5)<"+close+" AND z.timestamp>z.previous_timestamp";
- const classified="SELECT z.*,CASE WHEN z.employee_id IS NULL THEN 'رقم البصمة غير مربوط بعامل' WHEN z.kind NOT IN ('in','out') THEN 'رمز حركة غير معروف من الجهاز' WHEN z.kind='in' AND z.previous_kind='in' THEN 'دخول مكرر دون خروج مسجل' WHEN z.kind='out' AND z.previous_kind='out' THEN 'خروج مكرر دون عودة مسجلة' WHEN z.kind='out' AND z.previous_kind IS NULL THEN 'خروج دون حضور سابق' ELSE 'تسلسل الحركة غير مكتمل' END AS review_reason,CASE WHEN z.employee_id IS NULL OR z.kind NOT IN ('in','out') THEN 'review' "+
+ const classified="SELECT z.*,CASE WHEN z.employee_id IS NULL THEN 'رقم البصمة غير مربوط بعامل' WHEN z.kind NOT IN ('in','out') THEN 'رمز حركة غير محدد من جهاز MB10 ('||COALESCE(CAST(z.punch_code AS TEXT),'غير معروف')||')' WHEN z.kind='in' AND z.previous_kind='in' THEN 'دخول مكرر دون خروج مسجل' WHEN z.kind='out' AND z.previous_kind='out' THEN 'خروج مكرر دون عودة مسجلة' WHEN z.kind='out' AND z.previous_kind IS NULL THEN 'خروج دون حضور سابق' ELSE 'تسلسل الحركة غير مكتمل' END AS review_reason,CASE WHEN z.employee_id IS NULL OR z.kind NOT IN ('in','out') THEN 'review' "+
    "WHEN strftime('%w',substr(z.timestamp,1,10))!='5' AND ("+exit+") THEN 'permission_exit' "+
    "WHEN strftime('%w',substr(z.timestamp,1,10))!='5' AND ("+back+") THEN 'permission_return' "+
    "WHEN z.kind='in' AND z.previous_kind IS NULL THEN 'attendance' "+
@@ -808,7 +808,7 @@ async function attendanceRegister(db,user,request){
  }
  const base='FROM ('+classified+') q'+(filters.length?' WHERE '+filters.join(' AND '):'');
  const countRow=await db.prepare('SELECT COUNT(*) AS n '+base).bind(...args).first();
- const rows=await db.prepare('SELECT q.id,q.employee_id,q.employee_name,q.employee_code,q.timestamp,q.kind,q.source,q.device_user_id,q.device_event_id,q.corrected,q.movement_type,q.previous_timestamp,q.review_reason '+base+
+ const rows=await db.prepare('SELECT q.id,q.employee_id,q.employee_name,q.employee_code,q.timestamp,q.kind,q.source,q.device_user_id,q.device_event_id,q.corrected,q.movement_type,q.previous_timestamp,q.review_reason,q.punch_code '+base+
    ' ORDER BY q.timestamp DESC,q.id DESC LIMIT ? OFFSET ?').bind(...args,pageSize,(page-1)*pageSize).all();
  const items=(rows.results||[]).map(r=>({...r,permission_minutes:r.movement_type==='permission_return'&&r.previous_timestamp?durationDuringShift(r.previous_timestamp,r.timestamp,r.timestamp.slice(0,10),sch):0}));
  return response({items,total:Number(countRow?.n||0),page,page_size:pageSize,
@@ -942,7 +942,7 @@ export async function onRequest(context) {
       if (method!=='POST') return reject(405,'طريقة غير مدعومة؛ استخدم POST');
       return importMb10Punches(context);
     }
-    if (path==='status' && method==='GET') return response({setupRequired:await setupRequired(db),version:'0.2.19',pushConfigured:pushConfigured(env)});
+    if (path==='status' && method==='GET') return response({setupRequired:await setupRequired(db),version:'0.2.20',pushConfigured:pushConfigured(env)});
     if (path==='setup' && method==='POST') return initialSetup(db,env,request);
     if (path==='login' && method==='POST') return login(db,request);
     const user=await sessionUser(db,request);

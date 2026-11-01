@@ -6,7 +6,7 @@ button:disabled{opacity:.5;cursor:wait}.info{background:#edf7ef;padding:15px;bor
 small{color:#526557}a{color:#087847}
 </style></head><body><main><h1>جلب البصمة الآن</h1><p>قراءة حركات جهاز MB10 دون انتظار نهاية الدوام. تبقى البصمات الأصلية محفوظة، ولا تنشأ حركة انصراف تلقائيًا.</p>
 <div class="info" id="state" role="status">جارٍ التحقق من حالة الاتصال...</div><button type="button" id="sync">جلب البصمة الآن</button>
-<p><small>يتطلب تشغيل برنامج الربط على كمبيوتر الشبكة، وصلاحية المدير أو مسؤول الموارد البشرية.</small></p><p><a href="./">العودة إلى دوام الميسر</a></p>
+<p><small>يُرسل هذا الزر طلب الجلب إلى الخادم. لا تُقرأ حركات MB10 إلا عندما يكون برنامج الربط شغالًا على كمبيوتر المكتب المتصل بالجهاز وبالإنترنت. إذا بقيت الحالة «بانتظار برنامج الربط»، فتحقق من تشغيله. لا تُحذف بصمات الجهاز.</small></p><p><a href="./">العودة إلى دوام الميسر</a></p>
 </main><script>
 const status=document.getElementById('state'),btn=document.getElementById('sync');
 let pending=false;

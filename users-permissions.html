@@ -84,6 +84,12 @@ a{color:#087847}footer{display:flex;gap:20px;flex-wrap:wrap;margin:18px 0}
 <div class="row"><button id="reset" class="danger" type="button" disabled>إعادة تعيين كلمة المرور</button></div>
 <div id="passwordMsg" class="hint" role="status"></div>
 </section>
+<details class="panel">
+<summary>سجل تعديلات حسابات المستخدمين</summary>
+<p class="hint">يعرض أبرز تعديلات الحسابات وكلمات المرور والصلاحيات، دون إظهار أي كلمة مرور أو رمز سري.</p>
+<button type="button" id="loadAudit" class="secondary">عرض آخر التعديلات</button>
+<div id="auditItems" class="hint" role="status"></div>
+</details>
 <footer><a href="./my-attendance.html">دوامي وتنبيهاتي</a><a href="./">العودة إلى التطبيق</a></footer>
 </main>
 <script>
@@ -287,6 +293,25 @@ $('create').addEventListener('click',async()=>{
   $('createMsg').textContent='أُنشئ المستخدم. يغيّر كلمة المرور عند دخوله الأول.';
   $('createPanel').open=false;
  }catch(e){busy=false;$('create').disabled=false;$('createMsg').textContent='تعذر إنشاء المستخدم: '+e.message;}
+});
+$('loadAudit').addEventListener('click',async()=>{
+ const box=$('auditItems');
+ box.textContent='جارٍ تحميل سجل التعديلات...';
+ try{
+  const res=await api('audit');
+  const changes=(res.items||[]).filter(x=>['user.created','user.updated','user.password_reset','permission.changed','auth.password_changed'].includes(x.event_type)).slice(0,30);
+  box.replaceChildren();
+  if(!changes.length){box.textContent='لا توجد تعديلات مسجلة ضمن آخر أحداث النظام.';return}
+  const labels={'user.created':'إنشاء مستخدم','user.updated':'تعديل حساب','user.password_reset':'إعادة تعيين كلمة مرور','permission.changed':'تعديل صلاحية','auth.password_changed':'تغيير كلمة المرور الشخصية'};
+  for(const entry of changes){
+   const div=document.createElement('div');div.className='perm';
+   const subject=records.find(x=>x.id===entry.entity_id)?.name||'حساب رقم '+String(entry.entity_id||'').slice(0,8);
+   const actor=records.find(x=>x.id===entry.actor_user_id)?.name||'مدير/مستخدم';
+   const time=entry.occurred_at?new Date(entry.occurred_at.replace(' ','T')+'Z').toLocaleString('ar-YE',{timeZone:'Asia/Aden'}):'';
+   div.textContent=(labels[entry.event_type]||entry.event_type)+' — '+subject+' · بواسطة '+actor+' · '+time;
+   box.append(div);
+  }
+ }catch(e){box.textContent='تعذر قراءة سجل التدقيق: '+e.message;}
 });
 populateStatic();load();
 </script></body></html>

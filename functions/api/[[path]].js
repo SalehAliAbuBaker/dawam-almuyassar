@@ -625,16 +625,49 @@ async function myAttendance(db,user,request){
  const today=todayAden(),p=new URL(request.url).searchParams,date=str(p.get('date')||today,10);
  weekdayOf(date);
  if(date>today)return reject(400,'تاريخ مستقبلي غير متاح');
+ // Unlike payroll previews, the worker's personal record MUST include every MB10
+ // biometric event, including unknown punch_code such as 255. Corrected events
+ // are included once, and immutable raw events are never changed.
+ const startDay=date+'T00:00:00',endDay=date+'T23:59:59.999';
+ const personSql=[
+  "SELECT timestamp,kind,source,raw_code FROM (",
+  "SELECT p.occurred_at AS timestamp,p.kind,p.source,r.punch_code AS raw_code FROM punch_events p",
+  "LEFT JOIN device_raw_punches r ON r.organization_id=p.organization_id AND r.device_id=p.device_id AND r.event_fingerprint=p.device_event_id",
+  "WHERE p.organization_id=? AND p.employee_id=? AND p.occurred_at>=? AND p.occurred_at<=?",
+  "UNION ALL",
+  "SELECT r.occurred_at_device AS timestamp,CASE r.punch_code WHEN 0 THEN 'in' WHEN 1 THEN 'out' ELSE 'other' END AS kind, 'device' AS source,r.punch_code AS raw_code",
+  "FROM device_raw_punches r JOIN employees e ON e.organization_id=r.organization_id AND e.device_user_id=r.device_user_id",
+  "WHERE r.organization_id=? AND e.id=? AND r.device_id='mb10-main' AND r.occurred_at_device>=? AND r.occurred_at_device<=?",
+  "AND NOT EXISTS (SELECT 1 FROM punch_events p WHERE p.organization_id=r.organization_id AND p.device_id=r.device_id AND p.device_event_id=r.event_fingerprint)",
+  ") ORDER BY timestamp ASC LIMIT 501"
+ ].join(' ');
+ const personalRows=(await db.prepare(personSql)
+   .bind(user.organization_id,user.employee_id,startDay,endDay,user.organization_id,user.employee_id,startDay,endDay).all()).results||[];
+ const grouped=[],keys=new Map();
+ for(const r of personalRows.slice(0,500)){
+  const key=r.source==='device'?r.timestamp+'|'+r.kind+'|'+String(r.raw_code):null;
+  const existing=key?keys.get(key):null;
+  if(existing){existing.record_count++;continue;}
+  const entry={timestamp:r.timestamp,kind:r.kind,source:r.source,raw_code:r.raw_code,record_count:1};
+  grouped.push(entry);
+  if(key)keys.set(key,entry);
+ }
+ const rawCount=personalRows.filter(r=>r.source==='device').length;
+ const hasUnclassified=personalRows.some(r=>r.kind==='other');
+ const biometric={total_movements:personalRows.length,device_movements:rawCount,
+  first_recorded:personalRows[0]?.timestamp||null,last_recorded:personalRows[personalRows.length-1]?.timestamp||null,
+  has_unclassified:hasUnclassified,truncated:personalRows.length>500};
  const url=new URL(request.url);url.pathname='/api/attendance-summary';url.searchParams.set('date',date);url.searchParams.set('employee_id',user.employee_id);
  const res=await attendanceSummary(db,{...user,self_only:true},new Request(url.toString(),request));
  if(!res.ok)return res;
  const report=await res.json(),day=report.items?.[0];
  if(!day)return reject(404,'لا توجد بيانات للعامل المرتبط');
  const row=await db.prepare('SELECT state,finished_at FROM mb10_sync_jobs WHERE organization_id=? ORDER BY requested_at DESC LIMIT 1').bind(user.organization_id).first();
+ const successfulSync=await db.prepare("SELECT finished_at FROM mb10_sync_jobs WHERE organization_id=? AND state='done' AND finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 1").bind(user.organization_id).first();
  const shiftEnd=day.scheduled_end,shiftStart=day.scheduled_start;
  const minuteDelay=15*60000,now=Date.now();
  const deadline=time=>Date.parse(date+'T'+time+':00+03:00')+minuteDelay;
- const syncAt=row?.state==='done'&&row.finished_at?Date.parse(row.finished_at.replace(' ','T')+'Z'):NaN;
+ const syncAt=successfulSync?.finished_at?Date.parse(successfulSync.finished_at.replace(' ','T')+'Z'):NaN;
  const afterStart=!!shiftStart&&now>=deadline(shiftStart),afterEnd=!!shiftEnd&&now>=deadline(shiftEnd);
  const syncedStart=Number.isFinite(syncAt)&&!!shiftStart&&syncAt>=deadline(shiftStart);
  const syncedEnd=Number.isFinite(syncAt)&&!!shiftEnd&&syncAt>=deadline(shiftEnd);
@@ -645,10 +678,14 @@ async function myAttendance(db,user,request){
   if((day.review_issues||[]).some(x=>x!=='device_classification_requires_review'))
     add('review','warning','حركة بصمة تحتاج مراجعة','هناك تسلسل غير مكتمل؛ راجع الإدارة ولا تُعدل البصمة الأصلية.');
   if(!day.first_in&&afterStart){
-   if(syncedStart)add('checkin_not_recorded','warning','بصمة حضور غير ظاهرة','لا توجد بصمة حضور مسجلة بعد مزامنة الجهاز؛ إن كنت قد بصمت فأرسل بلاغًا للمراجعة.');
-   else add('checkin_pending','info','بانتظار مزامنة بصمة الحضور','لا يمكن الجزم بفشل البصمة أو الغياب قبل مزامنة حديثة للجهاز.');
+   if(biometric.total_movements>0)
+     add('recorded_unclassified','info','بصمتك مسجلة ونوعها غير مؤكد','يظهر لك وقت البصمة في سجل حركاتك أدناه. لا يعني غياب تصنيف الحضور أنك لم تبصم، ولا يُحتسب غياب أو خصم من هذه الحركة غير المحددة.');
+   else if(syncedStart)add('checkin_not_recorded','warning','لم تظهر أي حركة بصمة','لم تظهر بصمة في سجلك حتى آخر مزامنة ناجحة؛ يمكنك إرسال بلاغ للإدارة.');
+   else add('checkin_pending','info','بانتظار مزامنة بصمة الحضور','لا يمكن الجزم بعدم تسجيل البصمة قبل مزامنة حديثة للجهاز.');
   }else if(day.first_in&&!day.last_out&&afterEnd){
-   if(syncedEnd)add('checkout_not_recorded','warning','بصمة انصراف غير ظاهرة','لم تظهر بصمة انصراف بعد مزامنة الجهاز؛ يمكنك إرسال بلاغ للإدارة.');
+   if(biometric.has_unclassified)
+     add('checkout_unclassified','info','حركة انصراف غير محسومة','توجد بصمات مسجلة برمز غير محدد؛ تحتاج الإدارة إلى تأكيد نوع الانصراف دون تغيير البصمة الأصلية.');
+   else if(syncedEnd)add('checkout_not_recorded','warning','بصمة انصراف غير ظاهرة','لم تظهر بصمة انصراف مؤكدة بعد مزامنة الجهاز؛ يمكنك إرسال بلاغ للإدارة.');
    else add('checkout_pending','info','بانتظار مزامنة الانصراف','لا يمكن الجزم بعدم تسجيل البصمة قبل اكتمال المزامنة.');
   }
   if(day.first_in && day.late_minutes>0)
@@ -659,9 +696,13 @@ async function myAttendance(db,user,request){
     add('midday_absence','info','خروج وعودة أثناء الدوام','مدة الانقطاع المسجلة بين الخروج والعودة '+day.absence_minutes+' دقيقة، وتحتاج إلى مراجعة الاعتماد.');
   if(row?.state==='error')add('sync_error','info','تعذرت مزامنة الجهاز','البيانات قد تكون متأخرة؛ تحقق مع الإدارة.');
  }
- if(!alerts.length)add('clear','success','لا توجد تنبيهات حاليًا','التسجيل ظاهر ضمن آخر البيانات المتاحة؛ فشل قراءة الإصبع لا يمكن رصده مباشرة من هذا السجل.');
+ if(!alerts.length){
+  if(biometric.total_movements)add('clear','success','حركات البصمة ظاهرة','تم العثور على حركات مسجلة في سجلك. يبقى نوع الحركة غير المحدد بحاجة إلى اعتماد مسؤول دون خصم تلقائي.');
+  else add('no_movements','info','لا توجد حركات ظاهرة لهذا التاريخ','تحقق من وقت آخر مزامنة أو قدّم بلاغًا للإدارة إن كنت قد بصمت.');
+ }
  return response({linked:true,employee:{name:employee.name,code:employee.code},date,today,summary:day,alerts,
-   last_sync:row||null,verified_scan_failure:false,notification_mode:'in_app_after_sync',payroll_changed:false,timezone:'Asia/Aden'});
+   biometric,movements:grouped,last_sync:row||null,last_success:successfulSync||null,
+   verified_scan_failure:false,notification_mode:'in_app_after_sync',payroll_changed:false,timezone:'Asia/Aden'});
 }
 async function myPunchReport(db,user,request){
  if(!user.employee_id)return reject(403,'حسابك غير مرتبط بسجل عامل');
@@ -952,7 +993,7 @@ export async function onRequest(context) {
       if (method!=='POST') return reject(405,'طريقة غير مدعومة؛ استخدم POST');
       return importMb10Punches(context);
     }
-    if (path==='status' && method==='GET') return response({setupRequired:await setupRequired(db),version:'0.2.21',pushConfigured:pushConfigured(env)});
+    if (path==='status' && method==='GET') return response({setupRequired:await setupRequired(db),version:'0.2.22',pushConfigured:pushConfigured(env)});
     if (path==='setup' && method==='POST') return initialSetup(db,env,request);
     if (path==='login' && method==='POST') return login(db,request);
     const user=await sessionUser(db,request);

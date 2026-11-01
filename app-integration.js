@@ -57,7 +57,7 @@
   // Keep the visible stage version consistent without rewriting the 2.9 MB application file.
   function mountVersion(){
     const version='0.2.16';
-    const outdated=/0\\.2\\.(?:12|15)/g;
+    const outdated=/0\.2\.(?:12|15)/g;
     document.title=document.title.replace(outdated,version);
     for(const el of [document.querySelector('.login-art small'),document.getElementById('appVersion'),document.querySelector('.side-footer small')]){
       if(el)el.textContent=el.textContent.replace(outdated,version);

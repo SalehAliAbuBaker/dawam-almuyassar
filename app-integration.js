@@ -1,4 +1,4 @@
-/* Dawam 0.2.17 — non-invasive admin and personal attendance navigation.
+/* Dawam 0.2.18 — non-invasive admin and personal attendance navigation.
    No access tokens, employee data, or passwords are stored by this script. */
 (() => {
   'use strict';
@@ -7,7 +7,7 @@
   const deviceSyncUrl='/mb10-sync.html';
   let isAdmin=false, canSync=false, hasPersonal=false, checking=false, mounting=false;
   const style='display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 14px;border-radius:10px;background:#167a4d;color:white;text-decoration:none;font:600 14px Tahoma,Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.12);max-width:100%;';
-  const htmlLabel=label+' — 0.2.17';
+  const htmlLabel=label+' — 0.2.18';
 
   function makeLink() {
     const el=document.createElement('a');
@@ -26,14 +26,15 @@
     link.textContent='جلب بصمات MB10';
     link.className='dawam-device-sync-entry';
     link.setAttribute('style',style);
-    const permissions=document.querySelector('.dawam-permissions-entry');
-    if(permissions&&permissions.style.position!=='fixed'&&permissions.parentElement){
-      permissions.insertAdjacentElement('afterend',link);
-    }else{
-      link.style.position='fixed';link.style.left='12px';link.style.bottom='70px';
-      link.style.zIndex='999';link.style.maxWidth='calc(100vw - 24px)';
-      document.body.appendChild(link);
-    }
+    const attendance=findMenuNode(['الحضور والبصمة']);
+    if(!attendance)return;
+    link.style.display='flex';
+    link.style.width='fit-content';
+    link.style.margin='6px 18px 10px 0';
+    link.style.background='#e9f4eb';
+    link.style.color='#075c38';
+    link.style.boxShadow='none';
+    attendance.insertAdjacentElement('afterend',link);
   }
   function mountPersonal() {
     if(!hasPersonal || document.querySelector('.dawam-my-attendance-entry'))return;
@@ -56,21 +57,33 @@
   }
   // Keep the visible stage version consistent without rewriting the 2.9 MB application file.
   function mountVersion(){
-    const version='0.2.17';
-    const outdated=/0\.2\.(?:12|15)/g;
-    document.title=document.title.replace(outdated,version);
+    const version='0.2.18';
+    const outdated=/0\.2\.(?:12|15|16|17)/g;
+    const title=document.title.replace(outdated,version);
+    if(title!==document.title)document.title=title;
     for(const el of [document.querySelector('.login-art small'),document.getElementById('appVersion'),document.querySelector('.side-footer small')]){
-      if(el)el.textContent=el.textContent.replace(outdated,version);
+      if(!el)continue;
+      const next=el.textContent.replace(outdated,version);
+      if(next!==el.textContent)el.textContent=next;
     }
     const foot=document.querySelector('footer.footer');
     if(foot){
       for(const node of foot.childNodes){
-        if(node.nodeType===Node.TEXT_NODE)node.textContent=node.textContent.replace(outdated,version);
+        if(node.nodeType!==Node.TEXT_NODE)continue;
+        const next=node.textContent.replace(outdated,version);
+        if(next!==node.textContent)node.textContent=next;
       }
     }
   }
   function displayText(el) {
     return (el.innerText||el.textContent||'').replace(/\s+/g,' ').trim();
+  }
+  function findMenuNode(labels) {
+    const candidates=document.querySelectorAll('aside a,aside button,nav a,nav button,[class*="sidebar"] a,[class*="sidebar"] button,[class*="side-nav"] a,[class*="side-nav"] button');
+    for(const el of candidates) {
+      if(labels.includes(displayText(el))&&isVisible(el))return el;
+    }
+    return null;
   }
   function isVisible(el) {
     if (!el || !el.isConnected) return false;
@@ -89,30 +102,18 @@
     if (!isAdmin || mounting || document.querySelector('.dawam-permissions-entry') || hasNativePermissionsLink()) return;
     mounting=true;
     try {
-      // Prefer placing the link beside the existing Settings navigation control.
-      const candidates=document.querySelectorAll('button,a,[role="button"]');
-      let settings=null;
-      for (const node of candidates) {
-        const value=displayText(node);
-        if ((value==='الإعدادات' || value==='⚙ الإعدادات' || value==='إعدادات') && isVisible(node)) {
-          settings=node;
-          break;
-        }
-      }
+      // Permissions belong to Settings; never add a floating shortcut over attendance.
+      const settings=findMenuNode(['الإعدادات واللوائح','الإعدادات','⚙ الإعدادات','إعدادات']);
+      if(!settings)return;
       const link=makeLink();
-      if(settings && settings.parentElement) {
-        settings.insertAdjacentElement('afterend',link);
-      } else {
-        // Safe fallback: a small in-app shortcut instead of rewriting the shell.
-        link.style.position='fixed';
-        link.style.left='12px';
-        link.style.bottom='16px';
-        link.style.zIndex='999';
-        link.style.fontSize='12px';
-        link.style.padding='8px 11px';
-        link.style.maxWidth='calc(100vw - 24px)';
-        document.body.appendChild(link);
-      }
+      link.textContent='المستخدمون والصلاحيات';
+      link.style.display='flex';
+      link.style.width='fit-content';
+      link.style.margin='6px 18px 10px 0';
+      link.style.background='#e9f4eb';
+      link.style.color='#075c38';
+      link.style.boxShadow='none';
+      settings.insertAdjacentElement('afterend',link);
     } finally {mounting=false;}
   }
   // Fix any preexisting menu option that was visible but had no working action.

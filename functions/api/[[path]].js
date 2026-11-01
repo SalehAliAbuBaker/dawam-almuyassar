@@ -264,33 +264,27 @@ async function updateUser(db, actor, id, request) {
 
 /* Administrative password reset: administrator proves knowledge of own password.
    Never read back an existing password, never store plaintext or send it in audit. */
+/* Reset a forgotten password from an authenticated administrator session.
+   The existing password cannot be recovered; a new salted hash replaces it.
+   The admin confirms the exact target account email to prevent mistakes.
+   A signed-in admin cannot reset their own password via this endpoint. */
 async function adminResetUserPassword(db,actor,id,request){
-  if(id===actor.id)return reject(400,'لتغيير كلمة مرور المدير استخدم تغيير كلمة مروري مع كتابة الكلمة القديمة');
-  const target=await db.prepare('SELECT id,role,is_active FROM users WHERE id=? AND organization_id=?').bind(id,ORG).first();
+  if(id===actor.id)return reject(400,'لتغيير كلمة مرور حسابك الإداري استخدم تغيير كلمة مروري');
+  const target=await db.prepare('SELECT id,email,role,is_active FROM users WHERE id=? AND organization_id=?').bind(id,ORG).first();
   if(!target)return reject(404,'المستخدم غير موجود');
+  if(!target.is_active)return reject(409,'الحساب موقوف؛ أعد تفعيله قبل تعيين كلمة المرور');
   const b=await bodyJson(request);
-  if(!b||typeof b!=='object'||Array.isArray(b)||!validPassword(b.new_password)||typeof b.admin_password!=='string')
-    return reject(400,'أدخل كلمة مرور جديدة من 12 إلى 128 حرفًا وكلمة مرور المدير الحالية');
-  const bucket=await hashText('admin-password-reset|'+actor.id);
-  const previous=await db.prepare('SELECT attempts,locked_until,updated_at FROM login_attempts WHERE bucket=?').bind(bucket).first();
-  if(previous?.locked_until&&previous.locked_until>iso())return reject(429,'محاولات تأكيد كثيرة؛ حاول بعد 15 دقيقة');
-  const correct=safeEquals(await passwordHash(b.admin_password,actor.password_salt,actor.password_iterations),actor.password_hash);
-  if(!correct){
-    const stale=!previous?.updated_at||Date.now()-Date.parse(previous.updated_at)>15*60000;
-    const count=stale?1:(previous?.attempts||0)+1;
-    const locked=count>=5?new Date(Date.now()+15*60000).toISOString():null;
-    await db.prepare('INSERT INTO login_attempts(bucket,attempts,locked_until,updated_at) VALUES (?,?,?,?) ON CONFLICT(bucket) DO UPDATE SET attempts=excluded.attempts,locked_until=excluded.locked_until,updated_at=excluded.updated_at')
-      .bind(bucket,count,locked,iso()).run();
-    return reject(403,'كلمة مرور المدير الحالية غير صحيحة');
-  }
-  await db.prepare('DELETE FROM login_attempts WHERE bucket=?').bind(bucket).run();
+  if(!b||typeof b!=='object'||Array.isArray(b)||!validPassword(b.new_password)||
+     typeof b.confirm_email!=='string'||!safeEquals(emailVal(b.confirm_email),target.email))
+    return reject(400,'أدخل كلمة مرور جديدة من 12 إلى 128 حرفًا وأكد البريد الإلكتروني للحساب المحدد');
   const salt=randomB64(18),hash=await passwordHash(b.new_password,salt);
   await db.prepare("UPDATE users SET password_hash=?,password_salt=?,password_iterations=?,must_change_password=1,updated_at=datetime('now') WHERE id=? AND organization_id=?")
     .bind(hash,salt,PBKDF2_ROUNDS,id,ORG).run();
   await db.prepare('DELETE FROM sessions WHERE user_id=?').bind(id).run();
   await ensurePushStorage(db);
   await db.prepare('DELETE FROM push_subscriptions WHERE organization_id=? AND user_id=?').bind(ORG,id).run();
-  await audit(db,actor,'user.password_reset','user',id,{forced_change:true,revoked_sessions:true});
+  await audit(db,actor,'user.password_reset','user',id,
+    {forced_change:true,revoked_sessions:true,confirmation:'target_email',old_password_required:false});
   return response({ok:true,must_change_password:true,sessions_revoked:true,push_subscriptions_revoked:true});
 }
 async function changePassword(db,user,request) {
@@ -1099,7 +1093,7 @@ export async function onRequest(context) {
       if (method!=='POST') return reject(405,'طريقة غير مدعومة؛ استخدم POST');
       return importMb10Punches(context);
     }
-    if (path==='status' && method==='GET') return response({setupRequired:await setupRequired(db),version:'0.2.25',pushConfigured:pushConfigured(env)});
+    if (path==='status' && method==='GET') return response({setupRequired:await setupRequired(db),version:'0.2.26',pushConfigured:pushConfigured(env)});
     if (path==='setup' && method==='POST') return initialSetup(db,env,request);
     if (path==='login' && method==='POST') return login(db,request);
     const user=await sessionUser(db,request);

@@ -122,6 +122,7 @@ def agent(args, password):
     ready = False
     while True:
         job_id = None
+        completed = False
         stop_heartbeat = None
         heartbeat_thread = None
         try:
@@ -183,6 +184,7 @@ def agent(args, password):
                              {'id': job_id, 'status': 'success',
                               'inserted': inserted, 'duplicates': duplicates},
                              agent_id=args.agent_id, device_ready=True)
+                completed = True
                 print('Done; new:', inserted, 'duplicates:', duplicates, flush=True)
         except KeyboardInterrupt:
             print('Agent stopped.')
@@ -200,11 +202,16 @@ def agent(args, password):
                 stop_heartbeat.set()
             if heartbeat_thread and heartbeat_thread.is_alive():
                 heartbeat_thread.join(timeout=3)
-            if job_id:
-                # If success already marked the job done, this cannot overwrite it.
-                # If a failure occurred, report an error and allow safe retry later.
-                # The idempotent import ensures all existing punches are retained.
-                pass
+            if job_id and not completed:
+                # A lost lease cannot be marked successful by an old runner.
+                # If the server is unreachable it will expire the job safely.
+                try:
+                    request_json(base, token, 'mb10-agent',
+                                 {'id': job_id, 'status': 'error',
+                                  'error': 'تعذر إتمام قراءة الجهاز أو رفع الحركات'},
+                                 agent_id=args.agent_id, device_ready=ready)
+                except Exception:
+                    pass
         time.sleep(5)
 
 if __name__ == '__main__':

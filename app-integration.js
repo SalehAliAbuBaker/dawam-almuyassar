@@ -1,13 +1,15 @@
-/* Dawam 0.2.26 — non-invasive admin and personal attendance navigation.
+/* Dawam 0.2.27 — non-invasive admin and personal attendance navigation.
    No access tokens, employee data, or passwords are stored by this script. */
 (() => {
   'use strict';
   const targetUrl='/users-permissions.html';
   const label='إدارة المستخدمين والصلاحيات';
   const deviceSyncUrl='/mb10-sync.html';
+  const financeUrl='/finance-monthly.html';
+  let canFinance=false;
   let isAdmin=false, canSync=false, hasPersonal=false, checking=false, mounting=false;
   const style='display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 14px;border-radius:10px;background:#167a4d;color:white;text-decoration:none;font:600 14px Tahoma,Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.12);max-width:100%;';
-  const htmlLabel=label+' — 0.2.26';
+  const htmlLabel=label+' — 0.2.27';
 
   function makeLink() {
     const el=document.createElement('a');
@@ -36,6 +38,24 @@
     link.style.boxShadow='none';
     attendance.insertAdjacentElement('afterend',link);
   }
+  function mountFinance() {
+    if(!canFinance||document.querySelector('.dawam-finance-entry'))return;
+    if([...document.querySelectorAll('a[href]')].some(a=>(a.getAttribute('href')||'').includes('finance-monthly.html')))return;
+    const menu=findMenuNode(['الرواتب والمكافآت','الرواتب والمكافئات','الرواتب','الرواتب والحوافز']);
+    if(!menu)return;
+    const link=document.createElement('a');
+    link.href=financeUrl;
+    link.textContent='الحافز الشهري والخصومات';
+    link.className='dawam-finance-entry';
+    link.style.cssText=style;
+    link.style.display='flex';
+    link.style.width='fit-content';
+    link.style.margin='6px 18px 10px 0';
+    link.style.background='#e9f4eb';
+    link.style.color='#075c38';
+    link.style.boxShadow='none';
+    menu.insertAdjacentElement('afterend',link);
+  }
   function mountPersonal() {
     if(!hasPersonal || document.querySelector('.dawam-my-attendance-entry'))return;
     const link=document.createElement('a');
@@ -57,8 +77,8 @@
   }
   // Keep the visible stage version consistent without rewriting the 2.9 MB application file.
   function mountVersion(){
-    const version='0.2.26';
-    const outdated=/0\.2\.(?:12|15|16|17|18|19|20|21|22|23|24|25)/g;
+    const version='0.2.27';
+    const outdated=/0\.2\.(?:12|15|16|17|18|19|20|21|22|23|24|25|26)/g;
     const title=document.title.replace(outdated,version);
     if(title!==document.title)document.title=title;
     for(const el of [document.querySelector('.login-art small'),document.getElementById('appVersion'),document.querySelector('.side-footer small')]){
@@ -137,14 +157,17 @@
       isAdmin=!!(data && data.user && data.user.role==='admin');
       canSync=!!(data && data.user && (data.user.role==='admin'||data.user.role==='hr') && !data.user.self_only);
       hasPersonal=!!(data && data.user && data.user.employee_id);
+      canFinance=!!(data && data.user && ['admin','accountant','hr'].includes(data.user.role) && !data.user.self_only);
       if(!isAdmin)document.querySelectorAll('.dawam-permissions-entry').forEach(el=>el.remove());
       else mount();
-      if(!canSync)document.querySelectorAll('.dawam-device-sync-entry').forEach(el=>el.remove());
+      if(!canSync)document.querySelectorAll('.dawam-device-sync-entry,.dawam-finance-entry').forEach(el=>el.remove());
       else mountDeviceSync();
+      if(!canFinance)document.querySelectorAll('.dawam-finance-entry').forEach(el=>el.remove());
+      else mountFinance();
       if(!hasPersonal)document.querySelectorAll('.dawam-my-attendance-entry').forEach(el=>el.remove());
       else mountPersonal();
     } catch(_) {
-      isAdmin=false;canSync=false;hasPersonal=false;
+      isAdmin=false;canSync=false;hasPersonal=false;canFinance=false;
       document.querySelectorAll('.dawam-permissions-entry,.dawam-my-attendance-entry,.dawam-device-sync-entry').forEach(el=>el.remove());
     } finally {checking=false;}
   }
@@ -156,6 +179,9 @@
     if(canSync && !document.querySelector('.dawam-device-sync-entry')) {
       requestAnimationFrame(mountDeviceSync);
     }
+    if(canFinance && !document.querySelector('.dawam-finance-entry')) {
+      requestAnimationFrame(mountFinance);
+    }
     if(hasPersonal && !document.querySelector('.dawam-my-attendance-entry')) {
       requestAnimationFrame(mountPersonal);
     }
@@ -163,7 +189,7 @@
   function loadEmbeddedUserEditor(){
     if(document.querySelector('script[data-dawam-user-modal]'))return;
     const script=document.createElement('script');
-    script.src='/user-management-modal.js?v=0.2.26';
+    script.src='/user-management-modal.js?v=0.2.27';
     script.defer=true;
     script.dataset.dawamUserModal='1';
     document.head.append(script);

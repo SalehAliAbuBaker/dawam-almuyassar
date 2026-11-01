@@ -16,16 +16,18 @@
  function findPanel(){
   // The original page contains a separate create/list modal. Find the visible
   // heading and its closest enclosing card, never the application shell.
-  const headings=Array.from(document.querySelectorAll('h1,h2,h3,h4,[role="heading"],strong,b'));
-  const head=headings.find(x=>text(x)===TITLE&&visible(x));
-  if(!head)return null;
-  let panel=head.parentElement;
-  for(let i=0;panel&&i<10;i++,panel=panel.parentElement){
-   if(panel===document.body)return null;
-   const t=text(panel);
-   if(t.includes('إنشاء حساب')&&t.includes('الحسابات')&&panel.querySelector('button')){
-    const r=panel.getBoundingClientRect();
-    if(r.width>250&&r.width<window.innerWidth*0.98)return {head,panel};
+  // Try semantic headings first; some older builds use a plain div/span title.
+  const candidates=Array.from(document.querySelectorAll('h1,h2,h3,h4,[role="heading"],strong,b,div,span'))
+    .filter(x=>x.childElementCount<=2&&text(x)===TITLE&&visible(x));
+  for(const head of candidates){
+   let panel=head.parentElement;
+   for(let i=0;panel&&i<12;i++,panel=panel.parentElement){
+    if(panel===document.body)break;
+    const t=text(panel);
+    if(t.includes('إنشاء حساب')&&t.includes('الحسابات')&&panel.querySelector('button')){
+     const r=panel.getBoundingClientRect();
+     if(r.width>250&&r.width<window.innerWidth*0.98)return {head,panel};
+    }
    }
   }
   return null;

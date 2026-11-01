@@ -270,9 +270,18 @@ async function load(focusId){
   items.replaceChildren();user.disabled=true;save.disabled=true;$('reset').disabled=true;
  }
 }
+function hasEditsOnPreviousUser(){
+ const previous=records.find(x=>x.id===chosenId);
+ if(!previous)return false;
+ const now=recordData();
+ if(Object.keys(now).some(k=>(now[k]??null)!==(k==='is_active'?!!previous.is_active:(previous[k]??null))))return true;
+ if(!['admin','viewer'].includes($('accountRole').value)&&scope.value!==initialScope)return true;
+ return Object.entries(permissionInputs).some(([key,el])=>
+  !el.disabled&&el.value!==overrideValue(originalPermissions[chosenId+'|'+key]));
+}
 user.addEventListener('change',()=>{
  const next=user.value;
- if(chosenId&&next!==chosenId&&(changedFields().length||isDirtyPermissions())&&
+ if(chosenId&&next!==chosenId&&hasEditsOnPreviousUser()&&
   !confirm('توجد تعديلات غير محفوظة. هل تريد الانتقال إلى حساب آخر دون حفظها؟')){
   user.value=chosenId;return;
  }

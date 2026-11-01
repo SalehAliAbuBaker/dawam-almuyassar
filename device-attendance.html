@@ -17,15 +17,15 @@ a{color:#176744}@media(max-width:600px){body{padding:8px}main{padding:12px}}</st
 const el=id=>document.getElementById(id);
 el('date').value=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Aden',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 function cell(tr,v){const td=document.createElement('td');td.textContent=String(v);tr.append(td);return td}
-const movementLabels={attendance:'حضور',departure:'انصراف',permission_exit:'استعذار — خروج مؤقت',permission_return:'استعذار — عودة',review:'تحتاج مراجعة'};
-function movementCell(tr,item){const td=cell(tr,'');const tag=document.createElement('span');tag.className='movement-tag '+(item.movement_type||'review');tag.textContent=movementLabels[item.movement_type]||'تحتاج مراجعة';td.append(tag)}
+const movementLabels={attendance:'حضور',departure:'انصراف',permission_exit:'استعذار — خروج مؤقت',permission_return:'استعذار — عودة',review:'حركة غير محددة'};
+function movementCell(tr,item){const td=cell(tr,'');const tag=document.createElement('span');tag.className='movement-tag '+(item.movement_type||'review');tag.textContent=item.movement_type==='review'?(item.kind==='other'?'حركة غير محددة':(item.review_reason?.includes('دخول مكرر')?'دخول مكرر':item.review_reason?.includes('خروج مكرر')?'انصراف مكرر':item.review_reason?.includes('خروج دون حضور')?'انصراف دون حضور':'تسلسل غير مكتمل')):(movementLabels[item.movement_type]||'حركة غير محددة');if(item.movement_type==='review')tag.title=item.review_reason||'تسلسل الحركة غير مكتمل';td.append(tag)}
 async function load(){
   el('stats').textContent='جارٍ تحميل السجلات...';el('rows').replaceChildren();
   try{
     const date=el('date').value;
     const r=await fetch('/api/device-attendance?date='+encodeURIComponent(date),{credentials:'same-origin',cache:'no-store'});
     const data=await r.json();if(!r.ok)throw Error(data.error||'فشل التحميل');
-    el('stats').textContent='الحركات: '+data.items.length+' | مرتبطة بعامل: '+data.matched_count+' | غير مرتبطة: '+data.unmatched_count+' | تحتاج مراجعة: '+data.review_count;
+    el('stats').textContent='الحركات: '+data.items.length+' | مرتبطة بعامل: '+data.matched_count+' | غير مرتبطة: '+data.unmatched_count+' | حركات غير محسومة: '+data.review_count;
     for(const item of data.items){
       const tr=document.createElement('tr');
       cell(tr,item.occurred_at_device.slice(11));

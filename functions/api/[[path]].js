@@ -1012,6 +1012,7 @@ export async function onRequest(context) {
     if (path==='permissions' && method==='GET') {
       const user=await sessionUser(db,request);
       if(!user) return reject(401,'يرجى تسجيل الدخول');
+      if(user.must_change_password) return reject(403,'يجب تغيير كلمة المرور قبل إدارة الصلاحيات');
       if(user.role!=='admin') return reject(403,'صلاحيات المدير فقط');
       const rows=await db.prepare("SELECT user_id,permission_key,allowed FROM user_permission_overrides WHERE organization_id=? ORDER BY user_id,permission_key").bind(ORG).all();
       return response({items:rows.results||[],keys:['data.self_only','device.sync','device.attendance.view','device.correction','employees.view','employees.edit','attendance.manual','reports.view','users.manage']});
@@ -1019,6 +1020,7 @@ export async function onRequest(context) {
     if (path==='permissions' && method==='PUT') {
       const user=await sessionUser(db,request);
       if(!user) return reject(401,'يرجى تسجيل الدخول');
+      if(user.must_change_password) return reject(403,'يجب تغيير كلمة المرور قبل إدارة الصلاحيات');
       if(user.role!=='admin') return reject(403,'صلاحيات المدير فقط');
       const b=await bodyJson(request);
       const valid=new Set(['data.self_only','device.sync','device.attendance.view','device.correction','employees.view','employees.edit','attendance.manual','reports.view','users.manage']);

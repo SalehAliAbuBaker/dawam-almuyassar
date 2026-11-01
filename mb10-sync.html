@@ -4,19 +4,22 @@ main{margin:5vh auto;max-width:520px;background:white;border-radius:18px;padding
 h1{font-size:1.45rem}p{line-height:1.9}button{border:0;background:#087847;color:white;border-radius:12px;padding:15px;font-size:1.1rem;width:100%;cursor:pointer}
 button:disabled{opacity:.5;cursor:wait}.info{background:#edf7ef;padding:15px;border-radius:12px;margin:18px 0;white-space:pre-wrap}
 small{color:#526557}a{color:#087847}
-</style></head><body><main><h1>مزامنة البصمة — MB10</h1><p>الإصدار التجريبي 0.2.22 — جلب حركات جهاز MB10 بصورة تلقائية كل 10 دقائق، وإمكانية الجلب الفوري عند الحاجة. تبقى سجلات البصمة الأصلية محفوظة، ولا تُنشأ حركات انصراف أو خصومات تلقائيًا.</p>
+</style></head><body><main><h1>مزامنة البصمة — MB10</h1><p>الإصدار التجريبي 0.2.23 — جلب حركات جهاز MB10 بصورة تلقائية كل 10 دقائق، وإمكانية الجلب الفوري عند الحاجة. تبقى سجلات البصمة الأصلية محفوظة، ولا تُنشأ حركات انصراف أو خصومات تلقائيًا.</p>
 <div class="info" id="last" role="status">جارٍ التحقق من آخر مزامنة ناجحة...</div>
+<div class="info" id="agents" role="status">جارٍ التحقق من الكمبيوتر الأساسي والاحتياطي...</div>
 <div class="info" id="state" role="status">جارٍ التحقق من حالة الاتصال...</div>
 <button type="button" id="sync">جلب البصمة الآن</button>
 <section aria-label="تفعيل الجلب التلقائي" style="margin-top:23px;border-top:1px solid #d9e9df">
 <h2 style="font-size:1.13rem">تفعيل الجلب التلقائي مرة واحدة</h2>
 <p><small>من كمبيوتر المكتب المتصل بالشبكة: أوقف برنامج الجلب اليدوي بـ Ctrl+C، ثم ثبّت مهمة Windows باسم DawamMuyassar-MB10-AutoSync باستخدام أداة التثبيت المعتمدة. ستبدأ عند تسجيل الدخول إلى Windows، وتستمر أثناء قفل الشاشة ما دام الكمبيوتر يعمل. لا يلزم فتح PowerShell أو الضغط على «جلب الآن» بصورة يومية.</small></p>
-<p><a href="https://github.com/SalehAliAbuBaker/dawam-almuyassar/blob/feature/dawam-0.2.0-foundation/tools/install_mb10_autosync.ps1" target="_blank" rel="noopener noreferrer">تعليمات وأداة التثبيت على كمبيوتر المكتب</a></p>
+<p><a href="https://github.com/SalehAliAbuBaker/dawam-almuyassar/blob/feature/dawam-0.2.0-foundation/tools/install_mb10_autosync.ps1" target="_blank" rel="noopener noreferrer">أداة الكمبيوتر الأساسي (192.168.0.8)</a></p>
+<p><a href="https://github.com/SalehAliAbuBaker/dawam-almuyassar/blob/feature/dawam-0.2.0-foundation/tools/install_mb10_backup.ps1" target="_blank" rel="noopener noreferrer">أداة الكمبيوتر الاحتياطي (192.168.0.19)</a></p>
+<p><small>يتصل الكمبيوتر الاحتياطي بمفتاح مستقل، ولا ينفذ الجلب ما دام الأساسي يعمل ويمكنه الوصول للجهاز. حالة الاتصال أدناه لا تعني أن جلبًا اكتمل؛ يُعتمد على سجل آخر جلب ناجح.</small></p>
 <p><small>لإيقاف التفعيل يوجد ملف uninstall_mb10_autosync.ps1 في المستودع. الاستغناء عن كمبيوتر المكتب نفسه يحتاج تهيئة PUSH/ADMS مستقلة؛ هذه الصفحة لا تتصل بالشبكة المحلية مباشرة.</small></p>
 </section>
 <p><small>زر «جلب البصمة الآن» يضع طلبًا في الخادم فقط، ويُنجزه برنامج Windows عند تشغيله. إذا بقي الطلب معلقًا، راجع حالة المهمة وسجل تشغيلها في المكتب. عند انقطاع الكهرباء أو الشبكة لن يحدث جلب جديد حتى عودتهما.</small></p><p><a href="./">العودة إلى دوام الميسر</a></p>
 </main><script>
-const status=document.getElementById('state'),last=document.getElementById('last'),btn=document.getElementById('sync');
+const status=document.getElementById('state'),last=document.getElementById('last'),agents=document.getElementById('agents'),btn=document.getElementById('sync');
 let pending=false;
 const fmt=d=>d?new Date(d.replace(' ','T')+'Z').toLocaleString('ar-YE',{timeZone:'Asia/Aden'}):'—';
 async function load(){
@@ -24,6 +27,13 @@ async function load(){
  const r=await fetch('/api/mb10-sync',{credentials:'same-origin',cache:'no-store'});
  const d=await r.json();if(!r.ok)throw Error(d.error||'تعذر الاتصال');
  const job=d.job;
+ const records=Array.isArray(d.agents)?d.agents:[];
+ const names={primary:'الكمبيوتر الأساسي (192.168.0.8)',backup:'الكمبيوتر الاحتياطي (192.168.0.19)'};
+ agents.textContent=['حالة برامج الربط:',...['primary','backup'].map(key=>{
+   const a=records.find(item=>item.agent_id===key);
+   if(!a)return names[key]+': لم يتصل بالنسخة الجديدة بعد';
+   return names[key]+': '+(!a.online?'غير متصل':!a.device_ready?'متصل بالإنترنت، لكن جهاز MB10 غير متاح':key==='backup'&&records.some(x=>x.agent_id==='primary'&&x.online&&x.device_ready)?'جاهز — في وضع الانتظار':'متصل وجاهز للجلب')+' — آخر اتصال: '+fmt(a.last_seen);
+ })].join('\n');
  const recent=d.last_success;
  if(!recent)last.textContent='لم تُسجل مزامنة مكتملة بعد. فعّل برنامج المكتب أو اضغط «جلب الآن» بعد تشغيله.';
  else{
@@ -34,11 +44,11 @@ async function load(){
  if(!job)status.textContent='لا توجد طلبات جلب سابقة.';
  else{
  const labels={pending:'بانتظار برنامج الربط',running:'جارٍ قراءة جهاز البصمة',done:'اكتمل الجلب',error:'تعذر الجلب'};
- status.textContent='الحالة: '+(labels[job.state]||job.state)+'\nتاريخ الطلب: '+fmt(job.requested_at)+'\nالحركات الجديدة: '+(job.new_count||0)+'\nالحركات الموجودة مسبقًا: '+(job.duplicate_count||0)+(job.error_text?'\n'+job.error_text:'');
+ status.textContent='الحالة: '+(labels[job.state]||job.state)+(job.agent_id?' — المنفّذ: '+(names[job.agent_id]||job.agent_id):'')+'\nتاريخ الطلب: '+fmt(job.requested_at)+'\nالحركات الجديدة: '+(job.new_count||0)+'\nالحركات الموجودة مسبقًا: '+(job.duplicate_count||0)+(job.error_text?'\n'+job.error_text:'');
  }
  pending=!!job&&['pending','running'].includes(job.state);
  btn.disabled=pending;btn.textContent=pending?'طلب الجلب قيد التنفيذ':'جلب البصمة الآن';
- }catch(e){status.textContent='تعذر التحقق: '+e.message;last.textContent='تعذر جلب حالة المزامنة من الخادم.';btn.disabled=true;}
+ }catch(e){status.textContent='تعذر التحقق: '+e.message;last.textContent='تعذر جلب حالة المزامنة من الخادم.';agents.textContent='تعذر التحقق من اتصال الكمبيوترين.';btn.disabled=true;}
 }
 btn.addEventListener('click',async()=>{
  btn.disabled=true;status.textContent='يتم إرسال طلب الجلب...';

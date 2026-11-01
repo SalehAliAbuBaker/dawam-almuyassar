@@ -57,16 +57,15 @@
   // Keep the visible stage version consistent without rewriting the 2.9 MB application file.
   function mountVersion(){
     const version='0.2.16';
-    if(document.title.includes('0.2.12'))document.title=document.title.replace('0.2.12',version);
+    const outdated=/0\\.2\\.(?:12|15)/g;
+    document.title=document.title.replace(outdated,version);
     for(const el of [document.querySelector('.login-art small'),document.getElementById('appVersion'),document.querySelector('.side-footer small')]){
-      if(el && el.textContent.includes('0.2.12'))el.textContent=el.textContent.replace('0.2.12',version);
+      if(el)el.textContent=el.textContent.replace(outdated,version);
     }
     const foot=document.querySelector('footer.footer');
     if(foot){
       for(const node of foot.childNodes){
-        if(node.nodeType===Node.TEXT_NODE && node.textContent.includes('0.2.12')){
-          node.textContent=node.textContent.replace('0.2.12',version);
-        }
+        if(node.nodeType===Node.TEXT_NODE)node.textContent=node.textContent.replace(outdated,version);
       }
     }
   }

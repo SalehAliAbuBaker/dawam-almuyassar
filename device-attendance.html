@@ -10,8 +10,9 @@ a{color:#176744}@media(max-width:600px){body{padding:8px}main{padding:12px}}</st
 <div class="controls"><label>التاريخ <input type="date" id="date"></label><button id="load">عرض البصمات</button><a href="/device-mapping.html">مطابقة أرقام البصمة</a></div>
 <p><span class="movement-tag attendance">حضور</span> <span class="movement-tag departure">انصراف</span> <span class="movement-tag permission_exit">استعذار وخروج مؤقت</span> <span class="movement-tag review">مراجعة</span></p>
 <div id="stats" class="stats">اختر التاريخ لعرض السجلات.</div>
-<div class="scroll"><table><thead><tr><th>الوقت</th><th>رقم البصمة</th><th>العامل</th><th>الحركة الأولية</th><th>الحالة</th></tr></thead><tbody id="rows"></tbody></table></div>
-<p class="warn">تنبيه: دخول 0 وخروج 1 تفسير أولي. الرمز 255 والحركات الناقصة تحتاج مراجعة. هذه الشاشة لا ترحّل بيانات للرواتب.</p>
+<div class="scroll"><table><thead><tr><th>الوقت</th><th>رقم البصمة</th><th>العامل</th><th>الحركة الأولية</th><th>سبب المراجعة أو الحالة</th><th>الإجراء</th></tr></thead><tbody id="rows"></tbody></table></div>
+<p class="warn">يُحتفظ بالحركة الأصلية كما سجلها جهاز MB10. الرموز غير المحددة، وخروج بلا حضور سابق، والحركات المتتابعة غير المكتملة تُعرض للمراجعة البشرية دون خصم أو تعديل تلقائي. تُجرى التصحيحات بإذن المسؤول مع تسجيل السبب.</p>
+<p><a href="/mb10-sync.html">متابعة جلب البصمات</a> · <a href="/">العودة إلى التطبيق</a></p>
 <script>
 const el=id=>document.getElementById(id);
 el('date').value=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Aden',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
@@ -31,7 +32,19 @@ async function load(){
       cell(tr,item.device_user_id);
       cell(tr,item.employee_name||'لم تتم المطابقة');
       movementCell(tr,item);
-      cell(tr,item.requires_review||item.movement_type==='review'?'مراجعة مطلوبة':item.movement_type==='permission_return'?'استعذار '+Number(item.permission_minutes||0)+' دقيقة':'مطابق — أولي');
+      const needsReview=item.requires_review||item.movement_type==='review';
+      const reason=needsReview?
+        (item.review_reason||'تتطلب الحركة مراجعة تسلسل البصمات')+
+        ((!item.correction_id&&item.punch_code!==0&&item.punch_code!==1)?' — الرمز الأصلي: '+String(item.punch_code??'غير متوفر'):''):
+        item.movement_type==='permission_return'?'استعذار '+Number(item.permission_minutes||0)+' دقيقة':'مسجلة — تصنيف أولي';
+      cell(tr,reason);
+      const action=cell(tr,'');
+      if(needsReview){
+        const link=document.createElement('a');
+        link.textContent='عرض وتصحيح';
+        link.href='/manage-punches.html?date='+encodeURIComponent(date)+'&fingerprint='+encodeURIComponent(item.event_fingerprint);
+        action.append(link);
+      }else action.textContent='—';
       el('rows').append(tr);
     }
   }catch(e){el('stats').textContent=e.message}

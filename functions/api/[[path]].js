@@ -204,6 +204,7 @@ async function createUser(db, actor, request) {
   if (!validEmail(email) || name.length < 2 || !ROLES.has(b.role) || !validPassword(password)) return reject(400,'راجع اسم المستخدم وبريده ودوره وكلمة المرور');
   const employeeId = b.employee_id ? str(b.employee_id,80) : null;
   if (employeeId && !(await db.prepare('SELECT id FROM employees WHERE id=? AND organization_id=?').bind(employeeId,ORG).first())) return reject(400,'العامل غير موجود');
+  if(employeeId && (await db.prepare('SELECT id FROM users WHERE organization_id=? AND employee_id=? LIMIT 1').bind(ORG,employeeId).first())) return reject(409,'هذا العامل مرتبط بالفعل بحساب مستخدم آخر');
   if (['viewer'].includes(b.role) && !employeeId) return reject(400,'حساب الاطلاع الشخصي يتطلب ربط عامل');
   if (b.role==='supervisor'&&!str(b.department_scope)) return reject(400,'حدد قسم المشرف');
   const id=uuid(),salt=randomB64(18),hash=await passwordHash(password,salt);
@@ -236,6 +237,7 @@ async function updateUser(db, actor, id, request) {
   if(b.employee_id!==undefined && b.employee_id!==null && typeof b.employee_id!=='string')return reject(400,'معرف العامل غير صالح');
   const employeeId=b.employee_id===undefined?target.employee_id:(str(b.employee_id,80)||null);
   if (employeeId && !(await db.prepare('SELECT id FROM employees WHERE id=? AND organization_id=?').bind(employeeId,ORG).first())) return reject(400,'العامل غير موجود');
+  if(employeeId && employeeId!==target.employee_id && (await db.prepare('SELECT id FROM users WHERE organization_id=? AND employee_id=? AND id<>? LIMIT 1').bind(ORG,employeeId,id).first())) return reject(409,'العامل مرتبط بالفعل بحساب مستخدم آخر');
   if(b.department_scope!==undefined && b.department_scope!==null && typeof b.department_scope!=='string')return reject(400,'القسم غير صالح');
   const department=b.department_scope===undefined?target.department_scope:(str(b.department_scope,100)||null);
   if (role==='viewer'&&!employeeId) return reject(400,'حساب الاطلاع الشخصي يتطلب ربط عامل');

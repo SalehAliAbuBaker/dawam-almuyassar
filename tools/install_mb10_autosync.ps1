@@ -42,7 +42,7 @@ $ErrorActionPreference = 'Stop'
 $root = Join-Path $env:LOCALAPPDATA 'DawamMuyassar\MB10'
 $keyFile = Join-Path $HOME 'MB10_IMPORT_TOKEN.dpapi'
 $logFile = Join-Path $root 'sync.log'
-$mutex = New-Object System.Threading.Mutex($false, 'Local\DawamMuyassarMB10AutoSync')
+$mutex = [System.Threading.Mutex]::new($false, 'Local\DawamMuyassarMB10AutoSync')
 $owned = $false
 try {
     try { $owned = $mutex.WaitOne(0) }

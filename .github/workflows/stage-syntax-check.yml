@@ -39,7 +39,7 @@ jobs:
                   if tag=='script' and self.inside:
                       self.scripts.append(''.join(self.parts))
                       self.inside=False
-          for page in ['users-permissions.html','my-attendance.html']:
+          for page in ['users-permissions.html','my-attendance.html','mb10-sync.html']:
               parser=Scripts()
               parser.feed(Path(page).read_text(encoding='utf8'))
               assert parser.scripts, f'{page}: no inline script'

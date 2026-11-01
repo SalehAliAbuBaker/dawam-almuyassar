@@ -100,16 +100,21 @@ $('switchAccount').addEventListener('click',async()=>{
  window.location.assign('/');
 });
 function fmt(time){return time?time.slice(11,16):'—'}
+function fmtSync(utc){
+ if(!utc)return 'غير متوفر';
+ const d=new Date(utc.replace(' ','T')+'Z');
+ return Number.isFinite(d.getTime())?new Intl.DateTimeFormat('ar-YE',{timeZone:'Asia/Aden',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).format(d):utc;
+}
 function setStats(day,biometric={}){
  $('stats').replaceChildren();
  const unclassified=!!biometric.total_movements&&!day.first_in;
  const status=unclassified?'بصمة مسجلة — النوع غير مؤكد':
-  ({completed:'مكتمل',missing_checkout:'انصراف غير مؤكد',no_checkin:'لا يوجد حضور مؤكد',weekly_off:'إجازة أسبوعية'})[day.status]||day.status;
+  ({completed:'مكتمل',missing_checkout:'انصراف غير مؤكد',no_checkin:'لا يوجد حضور مصنّف',weekly_off:'إجازة أسبوعية'})[day.status]||day.status;
  const metrics=[
    ['أول حركة بصمة',fmt(biometric.first_recorded)],
    ['آخر حركة بصمة',fmt(biometric.last_recorded)],
    ['عدد الحركات المسجلة',biometric.total_movements??0],
-   ['أول حضور مؤكد',fmt(day.first_in)],['آخر انصراف مؤكد',fmt(day.last_out)],
+   ['أول حضور مصنّف',fmt(day.first_in)],['آخر انصراف مصنّف',fmt(day.last_out)],
    ['حالة الحضور',status]
  ];
  // Do not present calculated absences/penalties as definitive if MB10 raw
@@ -161,7 +166,7 @@ async function load(){
     setStats(data.summary,data.biometric);
     showMovements(data);
     const sync=data.last_sync;
-    $('sync').textContent=sync?'آخر حالة مزامنة: '+({done:'مكتملة',error:'فشلت',running:'قيد التشغيل',pending:'بانتظار المعالجة'})[sync.state]+' · '+(sync.finished_at||'غير متوفر'):'لا توجد معلومات عن آخر مزامنة';
+    $('sync').textContent=sync?'حالة آخر طلب مزامنة: '+({done:'مكتملة',error:'فشلت',running:'قيد التشغيل',pending:'بانتظار المعالجة'})[sync.state]+' · '+fmtSync(sync.finished_at)+'\nآخر مزامنة ناجحة: '+fmtSync(data.last_success?.finished_at):'لا توجد معلومات عن آخر مزامنة';
     message.textContent='الحركات المعروضة من السجلات المتاحة، وقد تتأخر بصمات الجهاز حتى وصول المزامنة.';
   }else{
     $('details').classList.add('hidden');

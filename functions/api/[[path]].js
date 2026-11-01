@@ -654,8 +654,10 @@ async function myAttendance(db,user,request){
  }
  const rawCount=personalRows.filter(r=>r.source==='device').length;
  const hasUnclassified=personalRows.some(r=>r.kind==='other');
+ const deviceRows=personalRows.filter(r=>r.source==='device');
  const biometric={total_movements:personalRows.length,device_movements:rawCount,
   first_recorded:personalRows[0]?.timestamp||null,last_recorded:personalRows[personalRows.length-1]?.timestamp||null,
+  first_device_recorded:deviceRows[0]?.timestamp||null,last_device_recorded:deviceRows[deviceRows.length-1]?.timestamp||null,
   has_unclassified:hasUnclassified,truncated:personalRows.length>500};
  const url=new URL(request.url);url.pathname='/api/attendance-summary';url.searchParams.set('date',date);url.searchParams.set('employee_id',user.employee_id);
  const res=await attendanceSummary(db,{...user,self_only:true},new Request(url.toString(),request));

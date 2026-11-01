@@ -1,4 +1,4 @@
-/* Dawam 0.2.18 — non-invasive admin and personal attendance navigation.
+/* Dawam 0.2.19 — non-invasive admin and personal attendance navigation.
    No access tokens, employee data, or passwords are stored by this script. */
 (() => {
   'use strict';
@@ -7,7 +7,7 @@
   const deviceSyncUrl='/mb10-sync.html';
   let isAdmin=false, canSync=false, hasPersonal=false, checking=false, mounting=false;
   const style='display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 14px;border-radius:10px;background:#167a4d;color:white;text-decoration:none;font:600 14px Tahoma,Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.12);max-width:100%;';
-  const htmlLabel=label+' — 0.2.18';
+  const htmlLabel=label+' — 0.2.19';
 
   function makeLink() {
     const el=document.createElement('a');
@@ -57,8 +57,8 @@
   }
   // Keep the visible stage version consistent without rewriting the 2.9 MB application file.
   function mountVersion(){
-    const version='0.2.18';
-    const outdated=/0\.2\.(?:12|15|16|17)/g;
+    const version='0.2.19';
+    const outdated=/0\.2\.(?:12|15|16|17|18)/g;
     const title=document.title.replace(outdated,version);
     if(title!==document.title)document.title=title;
     for(const el of [document.querySelector('.login-art small'),document.getElementById('appVersion'),document.querySelector('.side-footer small')]){

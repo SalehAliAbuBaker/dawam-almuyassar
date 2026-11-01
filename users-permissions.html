@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>إدارة المستخدمين والصلاحيات | دوام الميسر 0.2.24</title>
+<title>إدارة المستخدمين والصلاحيات | دوام الميسر 0.2.25</title>
 <style>
 :root{font-family:Tahoma,Arial,sans-serif;color:#173d2b;background:#f5f8f5}
 *{box-sizing:border-box}body{margin:0;padding:12px}main{max-width:940px;margin:16px auto;background:#fff;padding:clamp(14px,3vw,26px);border-radius:18px;box-shadow:0 4px 22px #0001}
@@ -21,9 +21,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 .perm select{width:min(330px,100%)}.pill{font-size:.85rem;padding:5px 9px;border-radius:8px;background:#eef5ef}
 a{color:#087847}footer{display:flex;gap:20px;flex-wrap:wrap;margin:18px 0}
 @media(max-width:620px){.grid{grid-template-columns:1fr}.perm select{width:100%}main{padding:13px}}
+body.embedded{padding:0;background:white}body.embedded main{max-width:none;margin:0;padding:10px;box-shadow:none;border-radius:0}body.embedded footer,body.embedded #createPanel{display:none}
 </style></head><body><main>
 <h1>إدارة المستخدمين والصلاحيات</h1>
-<small>دوام الميسر — الإصدار التجريبي 0.2.24</small>
+<small>دوام الميسر — الإصدار التجريبي 0.2.25</small>
 <p class="hint">يمكن للمدير تعديل الحسابات والصلاحيات وإعادة تعيين كلمات المرور دون حذف بيانات العاملين أو حركات البصمة. تُسجل التغييرات في سجل التدقيق.</p>
 <div id="msg" class="msg" role="status">جارٍ التحقق من الحساب الإداري...</div>
 <div class="row"><button id="reload" class="secondary" type="button">تحديث قائمة المستخدمين</button><span id="counter" class="pill"></span></div>
@@ -113,6 +114,9 @@ function addOptions(select,entries,first){
  if(first){const opt=document.createElement('option');opt.value='';opt.textContent=first;select.append(opt);}
  for(const [val,label] of entries){const opt=document.createElement('option');opt.value=String(val);opt.textContent=label;select.append(opt);}
 }
+const params=new URLSearchParams(location.search);
+if(params.has('embedded'))document.body.classList.add('embedded');
+const requestedEmail=(params.get('email')||'').trim().toLowerCase();
 function populateStatic(){
  const entries=Object.entries(roles);addOptions($('accountRole'),entries);addOptions($('newRole'),entries);
  $('newRole').value='viewer';
@@ -203,7 +207,8 @@ async function load(focusId){
   if(me.user?.role!=='admin')throw Error('هذه الصفحة مخصصة لمدير النظام فقط');
   sessionId=me.user.id;records=u.items||[];employees=e.items||[];keys=p.keys||[];
   originalPermissions={};for(const x of p.items||[])originalPermissions[x.user_id+'|'+x.permission_key]=x.allowed===1;
-  const oldId=focusId||chosenId||user.value;
+  const matching=records.find(x=>(x.email||'').toLowerCase()===requestedEmail);
+  const oldId=focusId||(matching&&matching.id)||chosenId||user.value;
   addOptions(user,records.map(x=>[x.id,(x.name||'')+' — '+(roles[x.role]||x.role)+(x.is_active?'':' (موقوف)')]));
   if(records.some(x=>x.id===oldId))user.value=oldId;
   addOptions(employee,employeeChoices(),'— غير مربوط بعامل —');

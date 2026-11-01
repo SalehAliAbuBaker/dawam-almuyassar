@@ -52,6 +52,7 @@ body.embedded{padding:0;background:white}body.embedded main{max-width:none;margi
 <button type="button" data-panel="createPanel" aria-pressed="false">مستخدم جديد</button>
 <button type="button" data-panel="auditPanel" aria-pressed="false">سجل التعديلات</button>
 </nav>
+<div id="currentUser" class="hint" role="status" style="border:1px solid #d9e7dc;background:#f1f8f3;padding:10px 12px;border-radius:10px;font-weight:600">جارٍ تحميل الحساب المحدد...</div>
 
 <details class="panel screen-tab" id="createPanel">
 <summary>+ إضافة مستخدم جديد</summary>
@@ -233,7 +234,7 @@ function clearPasswords(){
 function renderSelected(){
  const r=selected();
  clearPasswords();$('passwordMsg').textContent='';
- if(!r){$('accountStatus').textContent='اختر حسابًا لبدء التعديل.';renderPermissions();renderState();return;}
+ if(!r){$('accountStatus').textContent='اختر حسابًا لبدء التعديل.';$('currentUser').textContent='لم يتم اختيار حساب.';renderPermissions();renderState();return;}
  chosenId=r.id;
  $('accountName').value=r.name||'';
  $('accountEmail').value=r.email||'';
@@ -245,6 +246,7 @@ function renderSelected(){
  initialScope=stored===true?'allow':'default';
  scope.value=r.role==='viewer'?'allow':r.role==='admin'?'default':initialScope;
  $('accountStatus').textContent=(r.is_active?'حساب نشط':'حساب موقوف')+' · '+(roles[r.role]||r.role)+(r.must_change_password?' · مطلوب تغيير كلمة المرور عند الدخول':'');
+ $('currentUser').textContent='الحساب المحدد: '+r.name+' · '+r.email+' · '+(r.is_active?'نشط':'موقوف');
  renderPermissions();renderState();
 }
 async function load(focusId){

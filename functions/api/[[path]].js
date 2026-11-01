@@ -895,10 +895,49 @@ async function deviceAttendance(db,user,request){
     read_only:true,posted_to_attendance:false,payroll_changed:false});
 }
 
+/* MB10 high-availability coordination. These tables are metadata only:
+   never delete/edit raw device punches, fingerprint IDs, or payroll. */
+async function ensureMb10AgentStorage(db) {
+  await db.prepare("CREATE TABLE IF NOT EXISTS mb10_sync_agents (organization_id TEXT NOT NULL,agent_id TEXT NOT NULL CHECK(agent_id IN ('primary','backup')),last_seen TEXT NOT NULL,device_ready INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(organization_id,agent_id))").run();
+  await db.prepare("CREATE TABLE IF NOT EXISTS mb10_sync_job_owners (job_id TEXT PRIMARY KEY,organization_id TEXT NOT NULL,agent_id TEXT NOT NULL CHECK(agent_id IN ('primary','backup')),last_heartbeat TEXT NOT NULL)").run();
+}
+function mb10AgentAuth(request, env) {
+  const auth=request.headers.get('authorization')||'';
+  const token=auth.startsWith('Bearer ')?auth.slice(7):'';
+  const requested=request.headers.get('x-mb10-agent-id')||'primary';
+  if(!['primary','backup'].includes(requested)) return null;
+  const primary=typeof env.MB10_IMPORT_TOKEN==='string'&&env.MB10_IMPORT_TOKEN.length>=32&&safeEquals(token,env.MB10_IMPORT_TOKEN);
+  const backup=typeof env.MB10_BACKUP_TOKEN==='string'&&env.MB10_BACKUP_TOKEN.length>=32&&safeEquals(token,env.MB10_BACKUP_TOKEN);
+  if((requested==='primary'&&primary)||(requested==='backup'&&backup&&!primary)) {
+    return {agent_id:requested,ready:request.headers.get('x-mb10-device-ready')!=='0'};
+  }
+  return null;
+}
+async function mb10TouchAgent(db,agent) {
+  await db.prepare("INSERT INTO mb10_sync_agents (organization_id,agent_id,last_seen,device_ready) VALUES (?,?,datetime('now'),?) ON CONFLICT(organization_id,agent_id) DO UPDATE SET last_seen=datetime('now'),device_ready=excluded.device_ready")
+    .bind(ORG,agent.agent_id,agent.ready?1:0).run();
+}
+async function mb10PrimaryAvailable(db) {
+  const row=await db.prepare("SELECT 1 AS ready FROM mb10_sync_agents WHERE organization_id=? AND agent_id='primary' AND device_ready=1 AND last_seen>=datetime('now','-60 seconds')").bind(ORG).first();
+  return !!row;
+}
+async function mb10MayWork(db,agent) {
+  return agent.ready&&(agent.agent_id==='primary'||!(await mb10PrimaryAvailable(db)));
+}
+async function mb10Enqueue(db,requestedBy) {
+  // The NOT EXISTS guard is inside the INSERT statement to serialize concurrent
+  // automatic/manual requests on D1's single writer, without mutating old rows.
+  const id=uuid();
+  const saved=await db.prepare("INSERT INTO mb10_sync_jobs(id,organization_id,requested_by,state) SELECT ?,?,?,'pending' WHERE NOT EXISTS (SELECT 1 FROM mb10_sync_jobs WHERE organization_id=? AND state IN ('pending','running'))")
+    .bind(id,ORG,requestedBy,ORG).run();
+  if(saved.meta?.changes)return {id,state:'pending',scheduled:true};
+  const existing=await db.prepare("SELECT id,state FROM mb10_sync_jobs WHERE organization_id=? AND state IN ('pending','running') ORDER BY requested_at DESC LIMIT 1").bind(ORG).first();
+  return existing?{...existing,already_pending:true}:{scheduled:false,retry:true};
+}
 async function expireAbandonedMb10Jobs(db) {
-  // Recover from power loss or crashed agents without deleting or changing raw punches.
-  // This runs only when a new synchronization is requested, not on every status poll.
-  await db.prepare("UPDATE mb10_sync_jobs SET state='error',finished_at=datetime('now'),error_text='انقطع الربط قبل اكتمال الجلب؛ ستُعاد المحاولة.' WHERE organization_id=? AND ((state='pending' AND requested_at<datetime('now','-30 minutes')) OR (state='running' AND COALESCE(started_at,requested_at)<datetime('now','-30 minutes')))")
+  // A new runner may recover jobs only after the old runner's heartbeat goes stale.
+  // Never remove a raw MB10 record. Keep a generous 15-minute lease for long reads.
+  await db.prepare("UPDATE mb10_sync_jobs SET state='error',finished_at=datetime('now'),error_text='انقطع الربط قبل اكتمال الجلب؛ ستُعاد المحاولة.' WHERE organization_id=? AND ((state='pending' AND requested_at<datetime('now','-30 minutes')) OR (state='running' AND COALESCE((SELECT last_heartbeat FROM mb10_sync_job_owners WHERE job_id=mb10_sync_jobs.id),started_at,requested_at)<datetime('now','-15 minutes')))")
     .bind(ORG).run();
 }
 
@@ -943,47 +982,55 @@ export async function onRequest(context) {
       const user=await sessionUser(db,request);
       if(!user) return reject(401,'يرجى تسجيل الدخول');
       if(user.self_only||!(await allowedByPermission(db,user,'device.sync',user.role==='hr'))) return reject(403,'ليس لديك صلاحية');
-      const last=await db.prepare("SELECT id,state,requested_at,started_at,finished_at,new_count,duplicate_count,error_text FROM mb10_sync_jobs WHERE organization_id=? ORDER BY requested_at DESC LIMIT 1").bind(ORG).first();
+      await ensureMb10AgentStorage(db);
+      const last=await db.prepare("SELECT j.id,j.state,j.requested_at,j.started_at,j.finished_at,j.new_count,j.duplicate_count,j.error_text,o.agent_id FROM mb10_sync_jobs j LEFT JOIN mb10_sync_job_owners o ON o.job_id=j.id WHERE j.organization_id=? ORDER BY j.requested_at DESC LIMIT 1").bind(ORG).first();
       const completed=await db.prepare("SELECT finished_at,new_count,duplicate_count FROM mb10_sync_jobs WHERE organization_id=? AND state='done' ORDER BY finished_at DESC LIMIT 1").bind(ORG).first();
-      return response({job:last||null,last_success:completed||null,automatic_sync_requires_office_agent:true,expected_interval_minutes:10});
+      const agents=await db.prepare("SELECT agent_id,last_seen,device_ready,CASE WHEN last_seen>=datetime('now','-60 seconds') THEN 1 ELSE 0 END AS online FROM mb10_sync_agents WHERE organization_id=? ORDER BY agent_id").bind(ORG).all();
+      return response({job:last||null,last_success:completed||null,agents:agents.results||[],automatic_sync_requires_office_agent:true,expected_interval_minutes:10});
     }
     if (path==='mb10-sync' && method==='POST') {
       const user=await sessionUser(db,request);
       if(!user) return reject(401,'يرجى تسجيل الدخول');
       if(user.self_only||!(await allowedByPermission(db,user,'device.sync',user.role==='hr'))) return reject(403,'ليس لديك صلاحية');
       if(user.must_change_password) return reject(403,'يجب تغيير كلمة المرور');
+      await ensureMb10AgentStorage(db);
       await expireAbandonedMb10Jobs(db);
-      const existing=await db.prepare("SELECT id,state FROM mb10_sync_jobs WHERE organization_id=? AND state IN ('pending','running') ORDER BY requested_at DESC LIMIT 1").bind(ORG).first();
-      if(existing) return response({id:existing.id,state:existing.state,already_pending:true});
-      const id=uuid();
-      await db.prepare("INSERT INTO mb10_sync_jobs(id,organization_id,requested_by,state) VALUES (?,?,?,'pending')").bind(id,ORG,user.id).run();
-      return response({id,state:'pending'},202);
+      const job=await mb10Enqueue(db,user.id);
+      return response(job,job.scheduled?202:200);
     }
     if (path==='mb10-agent' && ['GET','POST'].includes(method)) {
-      const secret=env.MB10_IMPORT_TOKEN;
-      const token=(request.headers.get('authorization')||'').replace(/^Bearer /,'');
-      if(typeof secret!=='string'||secret.length<32||!safeEquals(token,secret)) return reject(401,'غير مصرح');
+      const agent=mb10AgentAuth(request,env);
+      if(!agent) return reject(401,'رمز مزامنة الكمبيوتر أو تعريفه غير صالح');
+      await ensureMb10AgentStorage(db);
+      await mb10TouchAgent(db,agent);
       if(method==='GET') {
-        const job=await db.prepare("SELECT id,state FROM mb10_sync_jobs WHERE organization_id=? AND state='pending' ORDER BY requested_at ASC LIMIT 1").bind(ORG).first();
-        if(!job) return response({job:null});
-        const changed=await db.prepare("UPDATE mb10_sync_jobs SET state='running',started_at=datetime('now') WHERE id=? AND state='pending'").bind(job.id).run();
-        return response({job:changed.meta?.changes?{id:job.id}:null});
+        if(!(await mb10MayWork(db,agent)))return response({job:null,standby:true,primary_online:await mb10PrimaryAvailable(db)});
+        const job=await db.prepare("SELECT id FROM mb10_sync_jobs WHERE organization_id=? AND state='pending' ORDER BY requested_at ASC LIMIT 1").bind(ORG).first();
+        if(!job)return response({job:null});
+        const changed=await db.prepare("UPDATE mb10_sync_jobs SET state='running',started_at=datetime('now') WHERE id=? AND organization_id=? AND state='pending'").bind(job.id,ORG).run();
+        if(!changed.meta?.changes)return response({job:null});
+        await db.prepare("INSERT INTO mb10_sync_job_owners(job_id,organization_id,agent_id,last_heartbeat) VALUES (?,?,?,datetime('now'))").bind(job.id,ORG,agent.agent_id).run();
+        return response({job:{id:job.id},agent_id:agent.agent_id});
       }
       const data=await bodyJson(request);
-      // Local computer may schedule automatic synchronization (never a remote device read).
+      // A standby agent never creates or claims a job while the primary is healthy.
       if(data.action==='schedule'){
+        if(!(await mb10MayWork(db,agent)))return response({standby:true,scheduled:false,primary_online:await mb10PrimaryAvailable(db)});
         await expireAbandonedMb10Jobs(db);
-        const running=await db.prepare("SELECT id,state FROM mb10_sync_jobs WHERE organization_id=? AND state IN ('pending','running') ORDER BY requested_at DESC LIMIT 1").bind(ORG).first();
-        if(running)return response({job:running,already_pending:true});
-        const id=uuid();
-        await db.prepare("INSERT INTO mb10_sync_jobs(id,organization_id,requested_by,state) VALUES (?,?,'local-agent','pending')").bind(id,ORG).run();
-        return response({job:{id,state:'pending'},scheduled:true},202);
+        const job=await mb10Enqueue(db,'local-agent-'+agent.agent_id);
+        return response({job,scheduled:!!job.scheduled},job.scheduled?202:200);
+      }
+      if(data.action==='heartbeat'){
+        if(typeof data.id!=='string')return reject(400,'معرف مهمة غير صالح');
+        const changed=await db.prepare("UPDATE mb10_sync_job_owners SET last_heartbeat=datetime('now') WHERE job_id=? AND organization_id=? AND agent_id=? AND EXISTS(SELECT 1 FROM mb10_sync_jobs WHERE id=? AND organization_id=? AND state='running')").bind(data.id,ORG,agent.agent_id,data.id,ORG).run();
+        if(!changed.meta?.changes)return reject(409,'لم تعد المهمة مملوكة لهذا الكمبيوتر');
+        return response({ok:true});
       }
       if(typeof data.id!=='string'||!['success','error'].includes(data.status)) return reject(400,'بيانات غير صالحة');
       const state=data.status==='success'?'done':'error';
       const count=(x)=>Number.isSafeInteger(x)&&x>=0&&x<=1000000?x:0;
-      const changed=await db.prepare("UPDATE mb10_sync_jobs SET state=?,finished_at=datetime('now'),new_count=?,duplicate_count=?,error_text=? WHERE id=? AND organization_id=? AND state='running'").bind(state,count(data.inserted),count(data.duplicates),state==='error'?str(data.error,300):null,data.id,ORG).run();
-      if(!changed.meta?.changes) return reject(409,'المهمة غير متاحة');
+      const changed=await db.prepare("UPDATE mb10_sync_jobs SET state=?,finished_at=datetime('now'),new_count=?,duplicate_count=?,error_text=? WHERE id=? AND organization_id=? AND state='running' AND EXISTS(SELECT 1 FROM mb10_sync_job_owners WHERE job_id=? AND organization_id=? AND agent_id=?)").bind(state,count(data.inserted),count(data.duplicates),state==='error'?str(data.error,300):null,data.id,ORG,data.id,ORG,agent.agent_id).run();
+      if(!changed.meta?.changes) return reject(409,'المهمة غير متاحة لهذا الكمبيوتر');
       if(state==='done' && pushConfigured(env)){
         context.waitUntil(notifyWorkersAfterSuccessfulSync(db,env).catch(error=>{
           console.error('worker notification dispatch failed',String(error?.message||'unknown').slice(0,140));
@@ -995,7 +1042,7 @@ export async function onRequest(context) {
       if (method!=='POST') return reject(405,'طريقة غير مدعومة؛ استخدم POST');
       return importMb10Punches(context);
     }
-    if (path==='status' && method==='GET') return response({setupRequired:await setupRequired(db),version:'0.2.22',pushConfigured:pushConfigured(env)});
+    if (path==='status' && method==='GET') return response({setupRequired:await setupRequired(db),version:'0.2.23',pushConfigured:pushConfigured(env)});
     if (path==='setup' && method==='POST') return initialSetup(db,env,request);
     if (path==='login' && method==='POST') return login(db,request);
     const user=await sessionUser(db,request);

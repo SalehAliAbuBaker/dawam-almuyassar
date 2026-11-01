@@ -5,6 +5,9 @@
   "name": "dawam-muyassar-stage",
   "compatibility_date": "2026-10-29",
   "pages_build_output_dir": ".",
+  "vars": {
+    "VAPID_SUBJECT": "https://dawam-muyassar-stage.pages.dev"
+  },
   "d1_databases": [
     {
       "binding": "DB",

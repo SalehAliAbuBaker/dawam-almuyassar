@@ -6,9 +6,9 @@
 المشروع المقصود: `dawam-muyassar-stage` وعنوانه التجريبي:
 https://dawam-muyassar-stage.pages.dev
 
-1. من جهاز موثوق فيه Node.js، شغّل داخل مجلد المستودع: `node tools/generate-vapid.mjs` **مرة واحدة**. لا ترسل المفتاح الخاص في محادثة أو GitHub.
+1. **إذا لديك مفاتيح VAPID محفوظة سابقًا، احتفظ بها ولا تُنشئ مفاتيح جديدة.** الكود يدعم المفتاح الخاص بصيغة JWK JSON أو نص base64url القياسي (32 بايت). عند عدم وجود مفاتيح قديمة، يمكن تشغيل `node tools/generate-vapid.mjs` مرة واحدة من جهاز موثوق.
 2. افتح Cloudflare > Workers & Pages > `dawam-muyassar-stage` > Settings > Variables and Secrets (بيئة **Production** المرتبطة بالفرع `feature/dawam-0.2.0-foundation`).
-3. أضف `VAPID_PUBLIC_KEY` بالقيمة الناتجة للجزء العام، و`VAPID_PRIVATE_JWK` من الجزء الخاص كـ **Encrypted Secret**، و`VAPID_SUBJECT` بالقيمة `https://dawam-muyassar-stage.pages.dev`.
+3. أضف `VAPID_PUBLIC_KEY` بالقيمة العامة، وأضف **واحدًا فقط** من `VAPID_PRIVATE_JWK` (إذا كانت القيمة JSON) أو `VAPID_PRIVATE_KEY` (إذا كانت نص base64url) كـ **Encrypted Secret**؛ ثم `VAPID_SUBJECT` بالقيمة `https://dawam-muyassar-stage.pages.dev`. يجب أن يكون المفتاح العام والخاص زوجًا متطابقًا.
 4. نفّذ Deploy جديدًا بعد إضافة المتغيرات؛ بعض التغييرات لا تدخل حيز التنفيذ إلا بعد نشر جديد. لا تُعِد توليد المفاتيح بعد الاشتراك لأن ذلك يُبطل اشتراكات الأجهزة السابقة.
 5. افتح `/api/status` وتأكد من ظهور `"version":"0.2.14"` و`"pushConfigured":true`. لا يعرض هذا المسار مفاتيح أو بيانات حساسة.
 

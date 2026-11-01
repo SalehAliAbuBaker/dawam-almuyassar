@@ -160,7 +160,7 @@
       canFinance=!!(data && data.user && ['admin','accountant','hr'].includes(data.user.role) && !data.user.self_only);
       if(!isAdmin)document.querySelectorAll('.dawam-permissions-entry').forEach(el=>el.remove());
       else mount();
-      if(!canSync)document.querySelectorAll('.dawam-device-sync-entry,.dawam-finance-entry').forEach(el=>el.remove());
+      if(!canSync)document.querySelectorAll('.dawam-device-sync-entry').forEach(el=>el.remove());
       else mountDeviceSync();
       if(!canFinance)document.querySelectorAll('.dawam-finance-entry').forEach(el=>el.remove());
       else mountFinance();
@@ -168,7 +168,7 @@
       else mountPersonal();
     } catch(_) {
       isAdmin=false;canSync=false;hasPersonal=false;canFinance=false;
-      document.querySelectorAll('.dawam-permissions-entry,.dawam-my-attendance-entry,.dawam-device-sync-entry').forEach(el=>el.remove());
+      document.querySelectorAll('.dawam-permissions-entry,.dawam-my-attendance-entry,.dawam-device-sync-entry,.dawam-finance-entry').forEach(el=>el.remove());
     } finally {checking=false;}
   }
   const observer=new MutationObserver(() => {

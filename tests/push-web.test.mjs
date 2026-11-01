@@ -22,6 +22,13 @@ test('RFC8291 aes128gcm encrypted message can be decrypted by browser receiver',
  const env={VAPID_PUBLIC_KEY:b64(publicRaw),VAPID_PRIVATE_JWK:JSON.stringify(priv),VAPID_SUBJECT:'https://example.org'};
  const message={title:'دوام الميسر',body:'اختبار إشعار مشفّر',url:'/my-attendance.html'};
  const {url,init}=await makePushRequest(env,subscription,message);
+ // Existing VAPID installations may keep a base64url private scalar rather than JWK.
+ const scalarEnv={VAPID_PUBLIC_KEY:env.VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY:priv.d,VAPID_SUBJECT:env.VAPID_SUBJECT};
+ const scalarReq=await makePushRequest(scalarEnv,subscription,message);
+ assert.equal(scalarReq.init.headers['Content-Encoding'],'aes128gcm');
+ const scalarToken=scalarReq.init.headers.Authorization.split(' t=')[1].split(', k=')[0].split('.');
+ assert.equal(await subtle.verify({name:'ECDSA',hash:'SHA-256'},vapid.publicKey,
+    raw(scalarToken[2]),enc(scalarToken[0]+'.'+scalarToken[1])),true);
  assert.equal(url,subscription.endpoint);
  assert.equal(init.headers['Content-Encoding'],'aes128gcm');
  const token=init.headers.Authorization.split(' t=')[1].split(', k=')[0];

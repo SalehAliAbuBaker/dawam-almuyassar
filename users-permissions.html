@@ -1,101 +1,292 @@
 <!doctype html>
 <html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>إدارة المستخدمين والصلاحيات | دوام الميسر</title>
+<title>إدارة المستخدمين والصلاحيات | دوام الميسر 0.2.24</title>
 <style>
-*{box-sizing:border-box}body{font-family:Tahoma,Arial,sans-serif;background:#f5f8f5;color:#173d2b;margin:0;padding:16px}
-main{max-width:800px;margin:20px auto;background:#fff;padding:22px;border-radius:18px;box-shadow:0 4px 24px #0001}
-h1{font-size:1.45rem}h2{font-size:1.1rem;margin:22px 0 10px}
-label{display:block;margin:12px 0 5px;font-weight:bold}select,button,input{padding:11px;border-radius:9px;font:inherit}
-select,input{border:1px solid #abb9ae;max-width:100%;background:#fff;color:inherit}
-select{min-width:min(350px,100%)}button{background:#14784d;color:white;border:0;cursor:pointer}
-button:disabled{opacity:.5}button.secondary{background:#edf4ef;color:#205e3c}
-article{padding:12px 0;border-bottom:1px solid #e5eae6;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-.msg{background:#eef5ef;padding:12px;border-radius:10px;white-space:pre-wrap;line-height:1.7}small,.hint{color:#61766a;line-height:1.7}
-a{color:#14784d}.row{display:flex;align-items:center;flex-wrap:wrap;gap:10px}
+:root{font-family:Tahoma,Arial,sans-serif;color:#173d2b;background:#f5f8f5}
+*{box-sizing:border-box}body{margin:0;padding:12px}main{max-width:940px;margin:16px auto;background:#fff;padding:clamp(14px,3vw,26px);border-radius:18px;box-shadow:0 4px 22px #0001}
+h1{font-size:1.45rem;margin:.3rem 0}h2{font-size:1.14rem;margin:0 0 12px}h3{font-size:1.02rem}
+section.panel,details.panel{border:1px solid #dfebe3;border-radius:13px;padding:15px;margin:16px 0;background:#fff}
+details.panel summary{cursor:pointer;font-weight:700;padding:4px}
+small,.hint{color:#61766a;line-height:1.7}.hint{font-size:.87rem;margin:6px 0 14px}
+label{display:block;font-size:.88rem;font-weight:600;margin-bottom:6px}
+input,select,button{font:inherit;min-height:43px;border-radius:9px}
+input,select{border:1px solid #aabcae;background:white;color:#163c29;padding:9px;width:100%;min-width:0}
+button{border:0;background:#087847;color:white;padding:10px 17px;cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}.secondary{background:#eaf4ec;color:#0d6540}.danger{background:#fff4ee;color:#a43c26;border:1px solid #ecc9b9}
+button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid #087847;outline-offset:2px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.field{min-width:0}.wide{grid-column:1/-1}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.msg{background:#edf5ef;border:1px solid #d9eade;padding:11px;border-radius:10px;white-space:pre-wrap;line-height:1.7;margin:14px 0}
+.msg.error{background:#fff3f0;border-color:#ebc4b6;color:#903d2d}.msg.success{background:#e8f7ed;border-color:#bfe4ca;color:#126234}
+.hidden{display:none!important}.perm{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:10px 0;border-bottom:1px solid #edf1ed}
+.perm select{width:min(330px,100%)}.pill{font-size:.85rem;padding:5px 9px;border-radius:8px;background:#eef5ef}
+a{color:#087847}footer{display:flex;gap:20px;flex-wrap:wrap;margin:18px 0}
+@media(max-width:620px){.grid{grid-template-columns:1fr}.perm select{width:100%}main{padding:13px}}
 </style></head><body><main>
-<h1>إدارة المستخدمين والصلاحيات</h1><small>دوام الميسر — 0.2.22 (نسخة تطوير تجريبية)</small>
-<p>حدد المستخدم، واربطه بسجل العامل الصحيح، ثم اختر الصلاحيات. الوضع الشخصي يعرض بيانات العامل المرتبط فقط، حتى لو كان دوره يمنحه صلاحية أوسع.</p>
-<div class="msg" id="msg">جارٍ التحقق من تسجيل الدخول...</div>
-<label for="user">المستخدم</label><select id="user" disabled></select>
-<h2>الربط ونطاق البيانات</h2>
-<label for="employee">العامل المرتبط بهذا الحساب</label><select id="employee" disabled></select>
-<p class="hint">الربط بمعرّف العامل الفريد، وليس بتشابه الاسم أو رقم حركة البصمة. لا تفعّل النطاق الشخصي قبل التأكد من هوية العامل.</p>
+<h1>إدارة المستخدمين والصلاحيات</h1>
+<small>دوام الميسر — الإصدار التجريبي 0.2.24</small>
+<p class="hint">يمكن للمدير تعديل الحسابات والصلاحيات وإعادة تعيين كلمات المرور دون حذف بيانات العاملين أو حركات البصمة. تُسجل التغييرات في سجل التدقيق.</p>
+<div id="msg" class="msg" role="status">جارٍ التحقق من الحساب الإداري...</div>
+<div class="row"><button id="reload" class="secondary" type="button">تحديث قائمة المستخدمين</button><span id="counter" class="pill"></span></div>
+
+<details class="panel" id="createPanel">
+<summary>+ إضافة مستخدم جديد</summary>
+<p class="hint">كلمة المرور الأولية يجب أن تتكون من 12 حرفًا على الأقل، وسيُلزم المستخدم بتغييرها عند أول دخول.</p>
+<div class="grid">
+<div class="field"><label for="newName">الاسم</label><input id="newName" maxlength="120" autocomplete="off"></div>
+<div class="field"><label for="newEmail">البريد الإلكتروني (اسم الدخول)</label><input id="newEmail" type="email" maxlength="180" autocomplete="off"></div>
+<div class="field"><label for="newRole">الدور</label><select id="newRole"></select></div>
+<div class="field"><label for="newEmployee">العامل المرتبط</label><select id="newEmployee"></select></div>
+<div class="field"><label for="newDept">القسم للمشرف</label><input id="newDept" list="departments" maxlength="100" autocomplete="off"></div>
+<div class="field"><label for="newPassword">كلمة المرور الأولية</label><input id="newPassword" type="password" minlength="12" maxlength="128" autocomplete="new-password"></div>
+<div class="field"><label for="newConfirm">تأكيد كلمة المرور</label><input id="newConfirm" type="password" minlength="12" maxlength="128" autocomplete="new-password"></div>
+</div>
+<p class="row"><button type="button" id="create">إنشاء المستخدم</button></p>
+<div id="createMsg" class="hint" role="status"></div>
+</details>
+
+<section class="panel" aria-label="اختيار حساب">
+<h2>تعديل حساب موجود</h2>
+<label for="user">اختر المستخدم</label>
+<select id="user" disabled></select>
+<p id="accountStatus" class="hint"></p>
+<div class="grid" id="accountFields">
+<div class="field"><label for="accountName">الاسم</label><input id="accountName" maxlength="120" autocomplete="off"></div>
+<div class="field"><label for="accountEmail">البريد الإلكتروني</label><input id="accountEmail" type="email" maxlength="180" autocomplete="off"></div>
+<div class="field"><label for="accountRole">الدور الوظيفي</label><select id="accountRole"></select></div>
+<div class="field"><label for="accountActive">حالة الحساب</label><select id="accountActive"><option value="1">نشط — يسمح بالدخول</option><option value="0">موقوف — يمنع الدخول</option></select></div>
+<div class="field"><label for="employee">العامل المرتبط بهذا الحساب</label><select id="employee"></select></div>
+<div class="field"><label for="accountDept">قسم المشرف</label><input id="accountDept" list="departments" maxlength="100" autocomplete="off"></div>
+</div>
+<datalist id="departments"></datalist>
+<p class="hint">تعديل ربط العامل أو الدور يلغي جلسات الدخول السابقة للحماية. إيقاف الحساب يمنع الدخول، ولا يحذف سجلاته.</p>
+</section>
+
+<section class="panel">
+<h2>نطاق البيانات والصلاحيات</h2>
 <label for="scope">نطاق البيانات</label>
-<select id="scope" disabled><option value="default">بحسب الدور الأساسي</option><option value="allow">بيانات المستخدم نفسه فقط</option></select>
-<p id="scopeNote" class="hint"></p>
-<h2>صلاحيات العمليات</h2><section id="items"></section>
-<p class="hint">السماح والمنع يطبقان مع مراعاة الدور ونطاق البيانات. بعض الوحدات لا تزال تملك قيودًا إضافية في الخادم، ولا يمنح هذا الاختيار وصولًا إليها تلقائيًا.</p>
-<p class="row"><button id="save" disabled>حفظ التعديلات</button><button id="reload" class="secondary" type="button">إعادة تحميل</button></p>
-<p class="row"><a href="./my-attendance.html">تجربة صفحة العامل الشخصية</a><a href="./">العودة إلى التطبيق</a></p>
-</main><script>
+<select id="scope"><option value="default">بحسب الدور</option><option value="allow">بيانات المستخدم نفسه فقط</option></select>
+<p class="hint" id="scopeNote"></p>
+<h3>الصلاحيات التفصيلية</h3>
+<div id="items"></div>
+<p class="hint">الصلاحيات المحددة تُطبّق مع ضوابط الخادم؛ السماح في الواجهة لا يتجاوز قيود دور المستخدم أو النطاق الشخصي. المدير يملك صلاحيات الإدارة وفق دور المدير.</p>
+<div class="row"><button type="button" id="save" disabled>حفظ تعديلات الحساب والصلاحيات</button><button type="button" id="undo" class="secondary">التراجع عن التعديلات غير المحفوظة</button></div>
+</section>
+
+<section class="panel">
+<h2>كلمات المرور والأمان</h2>
+<p id="passwordHint" class="hint">اختر المستخدم لعرض أداة إعادة تعيين كلمة المرور.</p>
+<div class="grid">
+<div class="field"><label for="adminPassword" id="adminPasswordLabel">كلمة المرور الحالية للمدير (للتأكيد)</label><input type="password" id="adminPassword" maxlength="128" autocomplete="current-password"></div>
+<div class="field"><label for="resetPassword">كلمة المرور الجديدة</label><input type="password" id="resetPassword" minlength="12" maxlength="128" autocomplete="new-password"></div>
+<div class="field"><label for="confirmPassword">تأكيد كلمة المرور الجديدة</label><input type="password" id="confirmPassword" minlength="12" maxlength="128" autocomplete="new-password"></div>
+</div>
+<p class="hint">لا يمكن عرض كلمة المرور القديمة. عند إعادة التعيين تُنهى جلسات المستخدم ويُطلب منه تغيير كلمة المرور المؤقتة عند أول دخول. يُلغى أيضًا اشتراك إشعارات الجوال القديم للحماية.</p>
+<div class="row"><button id="reset" class="danger" type="button" disabled>إعادة تعيين كلمة المرور</button></div>
+<div id="passwordMsg" class="hint" role="status"></div>
+</section>
+<footer><a href="./my-attendance.html">دوامي وتنبيهاتي</a><a href="./">العودة إلى التطبيق</a></footer>
+</main>
+<script>
 'use strict';
+const $=id=>document.getElementById(id);
+const roles={admin:'مدير النظام',hr:'الموارد البشرية',accountant:'المحاسبة',supervisor:'مشرف قسم',viewer:'عامل — حساب شخصي'};
 const names={'device.sync':'جلب بصمات الجهاز','device.attendance.view':'عرض بصمات الجهاز','device.correction':'تصحيح بصمات الجهاز','employees.view':'عرض بيانات العاملين','employees.edit':'تعديل بيانات العاملين','attendance.manual':'إدخال الحضور يدويًا','reports.view':'عرض التقارير','users.manage':'إدارة المستخدمين'};
-const $=id=>document.getElementById(id),msg=$('msg'),user=$('user'),employee=$('employee'),scope=$('scope'),items=$('items'),save=$('save');
-let records=[],employees=[],keys=[],original={},dirty={},initialEmployee='',initialScope='default';
+const msg=$('msg'),user=$('user'),employee=$('employee'),scope=$('scope'),items=$('items'),save=$('save');
+let records=[],employees=[],keys=[],originalPermissions={},permissionInputs={},initialScope='default',chosenId='',busy=false,sessionId='';
+const header={'Content-Type':'application/json'};
 async function api(path,opts={}){
  const r=await fetch('/api/'+path,{credentials:'same-origin',cache:'no-store',...opts});
- const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||('HTTP '+r.status));return d;
+ const result=await r.json().catch(()=>({}));
+ if(!r.ok){const error=new Error(result.error||('HTTP '+r.status));error.status=r.status;throw error;}
+ return result;
 }
-function selectedRecord(){return records.find(x=>x.id===user.value)}
-function changed(){return Object.keys(dirty).length>0||employee.value!==initialEmployee||scope.value!==initialScope}
-function updateSave(){save.disabled=!changed()||!selectedRecord()}
-function render(){
- const record=selectedRecord();dirty={};items.replaceChildren();employee.replaceChildren();
- const empty=document.createElement('option');empty.value='';empty.textContent='— غير مربوط بعامل —';employee.append(empty);
- for(const e of employees){const o=document.createElement('option');o.value=e.id;o.textContent=e.name+' ('+e.code+')';employee.append(o)}
- if(!record){employee.disabled=true;scope.disabled=true;save.disabled=true;return}
- employee.value=record.employee_id||'';initialEmployee=employee.value;employee.disabled=false;
- const persisted=original[record.id+'|data.self_only'];
- const isViewer=record.role==='viewer',isAdmin=record.role==='admin';
- initialScope=isViewer?'allow':persisted===true?'allow':'default';
- scope.value=initialScope;scope.disabled=isViewer||isAdmin;
- $('scopeNote').textContent=isViewer?'دور الاطلاع الشخصي مقيد ببيانات العامل تلقائيًا، ولا يمكن توسيعه.':isAdmin?'مدير النظام لا يقيّد نطاقه الشخصي؛ استخدم حساب عامل مستقلًا للعرض الشخصي.':'تفعيل النطاق الشخصي يمنع الاطلاع أو التعديل خارج بيانات العامل المرتبط.';
- for(const key of keys.filter(k=>k!=='data.self_only')){
-   const row=document.createElement('article'),label=document.createElement('span'),select=document.createElement('select');
-   label.textContent=names[key]||key;select.dataset.key=key;
-   for(const [value,title] of [['default','افتراضي بحسب الدور'],['allow','سماح'],['deny','منع']]){
-    const opt=document.createElement('option');opt.value=value;opt.textContent=title;select.append(opt);
-   }
-   const cur=original[record.id+'|'+key];select.value=cur===true?'allow':cur===false?'deny':'default';
-   select.addEventListener('change',()=>{dirty[key]=select.value;updateSave()});
-   row.append(label,select);items.append(row);
+function notice(text,kind=''){msg.className='msg'+(kind?' '+kind:'');msg.textContent=text}
+function selected(){return records.find(x=>x.id===user.value)}
+function addOptions(select,entries,first){
+ select.replaceChildren();
+ if(first){const opt=document.createElement('option');opt.value='';opt.textContent=first;select.append(opt);}
+ for(const [val,label] of entries){const opt=document.createElement('option');opt.value=String(val);opt.textContent=label;select.append(opt);}
+}
+function populateStatic(){
+ const entries=Object.entries(roles);addOptions($('accountRole'),entries);addOptions($('newRole'),entries);
+ $('newRole').value='viewer';
+}
+function employeeChoices(){
+ return employees.map(x=>[x.id,x.name+' ('+(x.code||'—')+')']);
+}
+function recordData(){
+ return {
+  name:$('accountName').value.trim(),email:$('accountEmail').value.trim().toLowerCase(),
+  role:$('accountRole').value,is_active:$('accountActive').value==='1',
+  employee_id:employee.value||null,department_scope:$('accountDept').value.trim()||null
+ };
+}
+function changedFields(){
+ const r=selected();if(!r)return[];
+ const now=recordData();return Object.keys(now).filter(k=>(now[k]??null)!==(k==='is_active'?!!r.is_active:(r[k]??null)));
+}
+function overrideValue(raw){return raw===true?'allow':raw===false?'deny':'default'}
+function isDirtyPermissions(){
+ const r=selected();if(!r)return false;
+ if(!['viewer','admin'].includes($('accountRole').value)&&scope.value!==initialScope)return true;
+ return Object.entries(permissionInputs).some(([key,el])=>!el.disabled&&el.value!==overrideValue(originalPermissions[r.id+'|'+key]));
+}
+function renderState(){
+ const r=selected(),role=$('accountRole').value;
+ const self=!!r&&r.id===sessionId;
+ const adminRole=role==='admin',personal=role==='viewer';
+ scope.disabled=!r||adminRole||personal||busy;
+ if(personal)scope.value='allow';
+ else if(adminRole)scope.value='default';
+ $('scopeNote').textContent=personal?'الاطلاع الشخصي يقتصر دائمًا على العامل المرتبط، ولا يمكن توسيعه.':
+  adminRole?'حساب المدير لديه صلاحياته الإدارية ولا يمكن تقييده بالنطاق الشخصي.':
+  'يمكن تقييد هذا الحساب ببيانات العامل المرتبط فقط، دون الاطلاع على بيانات بقية العاملين.';
+ for(const select of Object.values(permissionInputs))select.disabled=busy||!r||adminRole;
+ $('accountActive').disabled=busy||!r||self;
+ $('accountRole').disabled=busy||!r;
+ $('accountName').disabled=busy||!r;
+ $('accountEmail').disabled=busy||!r;
+ $('accountDept').disabled=busy||!r;
+ employee.disabled=busy||!r;
+ save.disabled=busy||!r||(!changedFields().length&&!isDirtyPermissions());
+ $('reset').disabled=busy||!r;
+ $('passwordHint').textContent=self?'لتغيير كلمة مرور حسابك الإداري، أدخل كلمة مرورك الحالية ثم الجديدة. ستحتاج إلى تسجيل الدخول مجددًا.':
+  'إعادة التعيين للحساب المحدد: يجب إدخال كلمة مرور المدير الحالية، ثم كلمة مؤقتة جديدة. لا يمكن استرجاع القديمة.';
+ $('adminPasswordLabel').textContent=self?'كلمة المرور الحالية لحسابك':'كلمة المرور الحالية للمدير للتأكيد';
+ $('reset').textContent=self?'تغيير كلمة مروري':'إعادة تعيين كلمة مرور المستخدم';
+}
+function renderPermissions(){
+ const r=selected();items.replaceChildren();permissionInputs={};
+ if(!r)return;
+ for(const key of keys.filter(x=>x!=='data.self_only')){
+  const row=document.createElement('div');row.className='perm';
+  const label=document.createElement('label'),select=document.createElement('select');
+  const id='permission-'+key.replace(/[^a-z0-9]/gi,'-');label.htmlFor=id;label.textContent=names[key]||key;
+  select.id=id;select.setAttribute('aria-label',names[key]||key);
+  addOptions(select,[['default','افتراضي بحسب الدور'],['allow','سماح'],['deny','منع']]);
+  select.value=overrideValue(originalPermissions[r.id+'|'+key]);
+  select.addEventListener('change',renderState);
+  permissionInputs[key]=select;row.append(label,select);items.append(row);
  }
- updateSave();
 }
-async function load(){
- save.disabled=true;user.disabled=true;employee.disabled=true;scope.disabled=true;
- msg.textContent='جارٍ تحميل حسابات المستخدمين والصلاحيات والعاملين...';
+function clearPasswords(){
+ for(const id of ['adminPassword','resetPassword','confirmPassword','newPassword','newConfirm'])$(id).value='';
+}
+function renderSelected(){
+ const r=selected();
+ clearPasswords();$('passwordMsg').textContent='';
+ if(!r){$('accountStatus').textContent='اختر حسابًا لبدء التعديل.';renderPermissions();renderState();return;}
+ chosenId=r.id;
+ $('accountName').value=r.name||'';
+ $('accountEmail').value=r.email||'';
+ $('accountRole').value=r.role;
+ $('accountActive').value=r.is_active?'1':'0';
+ employee.value=r.employee_id||'';
+ $('accountDept').value=r.department_scope||'';
+ const stored=originalPermissions[r.id+'|data.self_only'];
+ initialScope=r.role==='viewer'?'allow':stored===true?'allow':'default';
+ scope.value=r.role==='admin'?'default':initialScope;
+ $('accountStatus').textContent=(r.is_active?'حساب نشط':'حساب موقوف')+' · '+(roles[r.role]||r.role)+(r.must_change_password?' · مطلوب تغيير كلمة المرور عند الدخول':'');
+ renderPermissions();renderState();
+}
+async function load(focusId){
+ if(busy)return;
+ busy=true;save.disabled=true;user.disabled=true;notice('جارٍ تحميل الحسابات والعاملين والصلاحيات...');
  try{
-  const [u,p,e]=await Promise.all([api('users'),api('permissions'),api('employees')]);
-  records=u.items||[];employees=e.items||[];keys=p.keys||[];
-  original={};for(const x of p.items||[])original[x.user_id+'|'+x.permission_key]=x.allowed===1;
-  const selected=user.value;user.replaceChildren();
-  for(const x of records){const o=document.createElement('option');o.value=x.id;o.textContent=x.name+' — '+x.role;user.append(o)}
-  if(records.some(x=>x.id===selected))user.value=selected;
-  user.disabled=!records.length;render();
-  msg.textContent=records.length?'يمكنك الآن تعديل ربط العامل ونطاق العرض والصلاحيات.':'لا يوجد مستخدمون.';
+  const [me,u,p,e]=await Promise.all([api('me'),api('users'),api('permissions'),api('employees')]);
+  if(me.user?.role!=='admin')throw Error('هذه الصفحة مخصصة لمدير النظام فقط');
+  sessionId=me.user.id;records=u.items||[];employees=e.items||[];keys=p.keys||[];
+  originalPermissions={};for(const x of p.items||[])originalPermissions[x.user_id+'|'+x.permission_key]=x.allowed===1;
+  const oldId=focusId||chosenId||user.value;
+  addOptions(user,records.map(x=>[x.id,(x.name||'')+' — '+(roles[x.role]||x.role)+(x.is_active?'':' (موقوف)')]));
+  if(records.some(x=>x.id===oldId))user.value=oldId;
+  addOptions(employee,employeeChoices(),'— غير مربوط بعامل —');
+  addOptions($('newEmployee'),employeeChoices(),'— غير مربوط بعامل —');
+  addOptions($('departments'),[...new Set(employees.map(x=>x.department).filter(Boolean))].map(d=>[d,d]));
+  $('counter').textContent=records.length+' حساب';
+  user.disabled=!records.length;
+  busy=false;renderSelected();notice('يمكنك تعديل الحساب والصلاحيات، أو إنشاء حساب جديد، أو إعادة تعيين كلمة المرور.','success');
  }catch(e){
-  msg.textContent='تعذر تحميل إدارة المستخدمين: '+e.message+'\nتأكد من الدخول بحساب مدير، وتوفر جدول الصلاحيات في D1.';
-  items.replaceChildren();
+  busy=false;notice('تعذر فتح إدارة المستخدمين: '+e.message+'\nتأكد من تسجيل الدخول كمدير ومن اتصال قاعدة البيانات.','error');
+  items.replaceChildren();user.disabled=true;save.disabled=true;$('reset').disabled=true;
  }
 }
-user.addEventListener('change',()=>{render()});
-employee.addEventListener('change',updateSave);scope.addEventListener('change',updateSave);
-$('reload').addEventListener('click',load);
+user.addEventListener('change',()=>{renderSelected()});
+for(const id of ['accountName','accountEmail','accountRole','accountActive','employee','accountDept','scope']){
+ $(id).addEventListener(id==='accountRole'||id==='accountActive'||id==='employee'||id==='scope'?'change':'input',renderState);
+}
+$('undo').addEventListener('click',()=>{renderSelected();notice('أُلغيت التعديلات غير المحفوظة.')});
+$('reload').addEventListener('click',()=>load());
 save.addEventListener('click',async()=>{
- const record=selectedRecord();if(!record||!changed())return;
- if(scope.value==='allow'&&!employee.value){msg.textContent='لا يمكن منح النطاق الشخصي دون ربط الحساب بعامل محدد.';return}
- if(record.role==='admin'&&employee.value!==initialEmployee){msg.textContent='يُفضّل عدم ربط حساب مدير النظام بعامل؛ أنشئ له حسابًا شخصيًا مستقلًا.';return}
- save.disabled=true;msg.textContent='جارٍ حفظ التغييرات...';
+ const r=selected();if(!r||busy)return;
+ const data=recordData(),fields=changedFields();
+ if(data.name.length<2||!/^\S+@\S+\.\S+$/.test(data.email)){notice('يرجى إدخال اسم واضح وبريد إلكتروني صحيح.','error');return;}
+ if(data.role==='viewer'&&!data.employee_id){notice('الحساب الشخصي يتطلب ربطه بعامل.','error');return}
+ if(data.role==='supervisor'&&!data.department_scope){notice('اختر قسمًا لحساب المشرف.','error');return}
+ if(scope.value==='allow'&&!data.employee_id&&data.role!=='admin'){notice('لا يمكن تفعيل النطاق الشخصي دون عامل مرتبط.','error');return}
+ const perms=Object.entries(permissionInputs).filter(([,el])=>!el.disabled);
+ const changes=perms.filter(([key,el])=>el.value!==overrideValue(originalPermissions[r.id+'|'+key]));
+ const scopeChanged=!['admin','viewer'].includes(data.role)&&scope.value!==initialScope;
+ if(!fields.length&&!changes.length&&!scopeChanged)return;
+ if(!confirm('تأكيد حفظ تعديلات الحساب المحدد؟ قد تُلغى جلسات دخول المستخدم عند تعديل هويته أو صلاحياته.'))return;
+ busy=true;renderState();notice('جارٍ حفظ تعديلات الحساب...');
  try{
-  // Save employee linking first so self-only permissions never point to an unlinked account.
-  if(employee.value!==initialEmployee)await api('users/'+encodeURIComponent(record.id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({employee_id:employee.value||null})});
-  if(scope.value!==initialScope)await api('permissions',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:record.id,permission_key:'data.self_only',allowed:scope.value==='allow'?true:null})});
-  for(const [permission_key,v] of Object.entries(dirty)){
-   await api('permissions',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:record.id,permission_key,allowed:v==='default'?null:v==='allow'})});
+  // Link the correct employee first, then scope. Partial failure is reported
+  // rather than declaring success for permissions that did not persist.
+  let needsLogin=false;
+  if(fields.length){
+   const result=await api('users/'+encodeURIComponent(r.id),{method:'PATCH',headers:header,body:JSON.stringify(data)});
+   needsLogin=!!result.reauth_required;
   }
-  await load();msg.textContent='حُفظت التعديلات. تسري التغييرات على المستخدم بعد إعادة تسجيل الدخول.';
- }catch(e){msg.textContent='لم يكتمل الحفظ: '+e.message+'\nاضغط إعادة تحميل لمراجعة ما تم حفظه قبل إعادة المحاولة.';save.disabled=false}
+  if(scopeChanged)await api('permissions',{method:'PUT',headers:header,body:JSON.stringify({user_id:r.id,permission_key:'data.self_only',allowed:scope.value==='allow'?true:null})});
+  for(const [permission_key,el] of changes){
+   await api('permissions',{method:'PUT',headers:header,body:JSON.stringify({user_id:r.id,permission_key,allowed:el.value==='default'?null:el.value==='allow'})});
+  }
+  busy=false;
+  if(needsLogin){notice('تم تحديث حسابك؛ سجّل الدخول مجددًا لتفعيل التغييرات.','success');window.location.assign('/');return}
+  await load(r.id);notice('تم حفظ تعديلات الحساب والصلاحيات بنجاح.','success');
+ }catch(e){busy=false;renderState();notice('لم يكتمل الحفظ: '+e.message+'\nاستخدم زر تحديث قائمة المستخدمين لمراجعة ما تم حفظه قبل المحاولة التالية.','error');}
 });
-load();
+$('reset').addEventListener('click',async()=>{
+ const r=selected();if(!r||busy)return;
+ const password=$('resetPassword').value,confirmPass=$('confirmPassword').value,adminPwd=$('adminPassword').value;
+ if(password.length<12||password.length>128){$('passwordMsg').textContent='كلمة المرور الجديدة يجب أن تكون من 12 إلى 128 حرفًا.';return}
+ if(password!==confirmPass){$('passwordMsg').textContent='كلمتا المرور الجديدتان غير متطابقتين.';return}
+ if(!adminPwd){$('passwordMsg').textContent='أدخل كلمة مرور المدير الحالية للتأكيد.';return}
+ const self=r.id===sessionId;
+ if(!confirm(self?'تأكيد تغيير كلمة مرور حسابك؟ ستنتهي جلسة الدخول الحالية.':'تأكيد إعادة تعيين كلمة مرور هذا المستخدم وإلغاء جلساته السابقة؟'))return;
+ busy=true;renderState();$('passwordMsg').textContent='جارٍ حفظ كلمة المرور الجديدة...';
+ try{
+  const endpoint=self?'change-password':'users/'+encodeURIComponent(r.id)+'/reset-password';
+  const body=self?{current_password:adminPwd,new_password:password}:{admin_password:adminPwd,new_password:password};
+  await api(endpoint,{method:'POST',headers:header,body:JSON.stringify(body)});
+  clearPasswords();busy=false;
+  if(self){notice('تغيرت كلمة مرورك بنجاح. يرجى تسجيل الدخول مجددًا.','success');window.location.assign('/');return}
+  $('passwordMsg').textContent='نجحت إعادة التعيين. سيغير المستخدم كلمة المرور المؤقتة عند أول دخول، وقد أُلغيت جلساته القديمة.';
+  await load(r.id);
+ }catch(e){busy=false;renderState();$('passwordMsg').textContent='تعذرت إعادة التعيين: '+e.message}
+});
+$('create').addEventListener('click',async()=>{
+ if(busy)return;
+ const name=$('newName').value.trim(),email=$('newEmail').value.trim().toLowerCase();
+ const role=$('newRole').value,employeeId=$('newEmployee').value||null,dept=$('newDept').value.trim()||null;
+ const pw=$('newPassword').value,confirmPw=$('newConfirm').value;
+ if(name.length<2||!/^\S+@\S+\.\S+$/.test(email)||!roles[role]){$('createMsg').textContent='راجع الاسم والبريد والدور.';return;}
+ if(role==='viewer'&&!employeeId){$('createMsg').textContent='حساب العامل الشخصي يتطلب ربطًا بعامل.';return;}
+ if(role==='supervisor'&&!dept){$('createMsg').textContent='حدد قسم المشرف.';return;}
+ if(pw.length<12||pw.length>128||pw!==confirmPw){$('createMsg').textContent='كلمة المرور يجب ألا تقل عن 12 حرفًا، وأن تطابق حقل التأكيد.';return;}
+ if(!confirm('إنشاء الحساب الجديد ومنحه الدور المحدد؟'))return;
+ busy=true;$('create').disabled=true;$('createMsg').textContent='جارٍ إنشاء المستخدم...';
+ try{
+  const d=await api('users',{method:'POST',headers:header,body:JSON.stringify({name,email,role,employee_id:employeeId,department_scope:dept,password:pw})});
+  clearPasswords();
+  for(const id of ['newName','newEmail','newDept'])$(id).value='';
+  $('newEmployee').value='';$('newRole').value='viewer';
+  busy=false;$('create').disabled=false;
+  await load(d.user?.id);
+  $('createMsg').textContent='أُنشئ المستخدم. يغيّر كلمة المرور عند دخوله الأول.';
+  $('createPanel').open=false;
+ }catch(e){busy=false;$('create').disabled=false;$('createMsg').textContent='تعذر إنشاء المستخدم: '+e.message;}
+});
+populateStatic();load();
 </script></body></html>

@@ -18,6 +18,7 @@ jobs:
           node --check "functions/_middleware.js"
           node --check "functions/api/device-import.js"
           node --check "app-integration.js"
+          node --check "user-management-modal.js"
           node --check "lib/push-web.js"
           node --check "lib/push-alerts.js"
           node --check "offline-sw.js"

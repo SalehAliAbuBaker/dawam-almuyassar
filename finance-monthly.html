@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#13734a">
+<title>الاستحقاقات والحافز الشهري | دوام الميسر 0.2.27</title>
+<style>
+:root{color-scheme:light;--g:#116b43;--g2:#eaf5ee;--line:#dae7dd;--ink:#17382b;--muted:#60786c;--bg:#f5f8f5;--warn:#8c4e12}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.65 Tahoma,Arial,sans-serif}
+main{max-width:1180px;margin:auto;padding:18px 14px 70px}
+h1{font-size:23px;margin:0}h2{font-size:17px;margin:0 0 12px}h3{font-size:15px;margin:8px 0}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.muted,small{color:var(--muted)}small{font-size:12px}
+a{color:var(--g)}.button,button{border:1px solid var(--g);background:var(--g);color:white;padding:10px 14px;border-radius:10px;font:inherit;cursor:pointer;text-decoration:none;display:inline-block}
+button.secondary,.button.secondary{background:white;color:var(--g)}button:disabled{opacity:.5;cursor:not-allowed}
+.tabs{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0}.tabs button{background:white;color:var(--g);border-color:var(--line)}.tabs button.active{background:var(--g);color:#fff}
+.panel{display:none}.panel.active{display:block}.card{background:white;border:1px solid var(--line);border-radius:14px;padding:17px;margin-bottom:14px;box-shadow:0 2px 12px #115c3010}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}.field{display:flex;flex-direction:column;gap:5px}
+label{font-weight:600;font-size:13px}input,select,textarea{width:100%;min-width:0;background:#fff;border:1px solid #bed3c4;border-radius:9px;font:inherit;padding:10px;color:var(--ink)}input:focus,select:focus{outline:2px solid #b5debf}
+.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:14px}
+.banner{border:1px solid #e0c89d;background:#fff7e8;color:#805018;padding:12px 14px;border-radius:11px;margin:10px 0}
+.success{color:var(--g)}.error{color:#a42d2d}.table-wrap{overflow:auto;max-width:100%}
+table{border-collapse:collapse;min-width:810px;width:100%;font-size:13px}td,th{padding:11px 9px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}th{background:#f0f6f2;color:#245b42;position:sticky;top:0}
+tfoot td{font-weight:700}.kpis{display:flex;gap:12px;flex-wrap:wrap}.kpi{flex:1;min-width:150px;background:var(--g2);padding:14px;border-radius:12px}.kpi strong{display:block;font-size:20px}
+.notready{color:#9c5412}.ready{color:var(--g)}.hide{display:none!important}
+#message{position:sticky;top:0;z-index:5;display:none;padding:12px;border-radius:10px;background:#fffdf2;border:1px solid #e2d4b6;margin-bottom:10px}
+.evaluation-row{display:grid;grid-template-columns:minmax(170px,1fr) 140px 80px;gap:10px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--line)}
+@media(max-width:580px){h1{font-size:19px}.card{padding:13px}.evaluation-row{grid-template-columns:minmax(100px,1fr) 95px 48px;font-size:12px}}
+@media print{.tabs,.actions,header a,#message,.no-print{display:none!important}.panel{display:none!important}#preview.active{display:block!important}body{background:white}.card{box-shadow:none;border:0}main{max-width:none}}
+</style>
+</head>
+<body>
+<main>
+<header>
+ <div><h1>الاستحقاقات والحافز الشهري</h1><small>دوام الميسر — النسخة التجريبية 0.2.27</small></div>
+ <a class="button secondary" href="/">العودة إلى التطبيق</a>
+</header>
+<div class="banner"><strong>وضع تجريبي آمن:</strong> الحسابات المعروضة مسودات فقط، ولا تُعتمد للصرف ولا تُغيّر الأرصدة أو سجلات البصمة. تسوية رصيد الدوام وخصومات التأخير ما زالت بانتظار ربط الحضور المعتمد.</div>
+<div id="message" role="status"></div>
+<div class="tabs no-print" role="tablist">
+ <button class="active" data-tab="preview">كشف الدورة المالية</button>
+ <button data-tab="profiles">ملف العامل والاستحقاقات</button>
+ <button data-tab="evaluations">تقييم العامل</button>
+ <button data-tab="extras">العمل الإضافي</button>
+ <button data-tab="policy">إعدادات الاستحقاقات</button>
+</div>
+
+<section id="preview" class="panel active">
+ <div class="card">
+  <div class="grid">
+   <div class="field"><label for="month">الشهر المالي</label><input id="month" type="month"></div>
+   <div class="field"><label for="query">البحث باسم العامل أو الرقم الوظيفي</label><input id="query" placeholder="بحث سريع"></div>
+  </div>
+  <div class="actions"><button id="refresh">احتساب المسودة</button><button class="secondary" id="print" type="button">طباعة المسودة</button></div>
+  <small id="cycleLabel"></small>
+ </div>
+ <div class="card">
+  <h2>ملخص الدورة</h2><div id="stats" class="kpis"></div>
+  <p class="muted">الحافز المعروض أدناه هو مجموع الاستحقاقات قبل تسوية الحضور؛ لا يمثل صافي الحافز المستحق للصرف.</p>
+  <div class="table-wrap"><table><thead><tr><th>العامل</th><th>الراتب المتوقع</th><th>المعيشة والأسرة</th><th>الخبرة</th><th>الرتبة/المهمة</th><th>التقييم</th><th>الإنجاز والإضافي</th><th>الحافز قبل الخصومات</th><th>الحالة</th></tr></thead><tbody id="previewBody"></tbody></table></div>
+  <p id="previewFoot" class="muted"></p>
+ </div>
+</section>
+
+<section id="profiles" class="panel">
+ <div class="card">
+  <h2>بيانات العامل المؤثرة في الاستحقاق</h2>
+  <p class="muted">هذه البيانات مستقلة عن البصمات والأسماء الأصلية. لا تُنقل أي مبالغ من PDF تلقائيًا دون مراجعة.</p>
+  <div class="field"><label for="profileEmployee">العامل</label><select id="profileEmployee"></select></div>
+  <div class="grid" style="margin-top:12px">
+   <div class="field"><label for="hire">تاريخ الالتحاق</label><input id="hire" type="date"></div>
+   <div class="field"><label for="family">عدد أفراد الأسرة المستحقين</label><input id="family" type="number" min="0" max="100" placeholder="لم يُحدد"></div>
+   <div class="field"><label for="rank">الرتبة</label><select id="rank"><option value="none">لا يوجد</option><option value="supervisor">المشرف</option><option value="deputy">النائب</option></select></div>
+   <div class="field"><label for="duty">ثقل المهمة</label><select id="duty"><option value="none">لا يوجد</option><option value="supervisor">المشرف</option><option value="deputy">النائب</option><option value="acting">النائب القائم مقام المشرف</option><option value="cashier">أمين الصندوق</option></select></div>
+   <div class="field"><label for="sal">راتب خاص (اتركه فارغًا لاستخدام الراتب المسجل أو الافتراضي)</label><input id="sal" type="number" min="0" placeholder="تلقائي"></div>
+   <div class="field"><label for="transport">مواصلات خاصة</label><input id="transport" type="number" min="0" placeholder="تلقائي"></div>
+   <div class="field"><label for="companyIns">تأمين المؤسسة</label><input id="companyIns" type="number" min="0" placeholder="لم يُراجع"></div>
+   <div class="field"><label for="totalIns">التأمين الكلي</label><input id="totalIns" type="number" min="0" placeholder="لم يُراجع"></div>
+   <div class="field"><label for="tax">ضريبة الكسب</label><input id="tax" type="number" min="0" placeholder="لم تُراجع"></div>
+   <div class="field"><label for="achievement">مكافأة الإنجاز الشهرية</label><input id="achievement" type="number" min="0" value="0"></div>
+  </div>
+  <div class="actions"><button id="saveProfile">حفظ استحقاقات العامل</button><button class="secondary" id="undoProfile">إلغاء التعديل</button></div>
+ </div>
+</section>
+
+<section id="evaluations" class="panel">
+ <div class="card">
+  <h2>نموذج التقييم المعتمد — 100 درجة</h2>
+  <div class="grid">
+   <div class="field"><label for="evaluationEmployee">العامل</label><select id="evaluationEmployee"></select></div>
+   <div class="field"><label for="evaluationMonth">شهر بدء سريان التقييم</label><input id="evaluationMonth" type="month"></div>
+  </div>
+  <p class="muted">التقييم جماعي، واعتماد النتيجة من المستخدم المخوّل. يبدأ الاستحقاق الشهري في شهر الاعتماد ويستمر حتى التقييم التالي. لا يمكن استبدال تقييم معتمد للشهر نفسه دون إجراء تصحيح مستقل.</p>
+  <div id="evaluationRows"></div>
+  <div class="grid">
+   <div class="field"><label for="evaluationNote">ملاحظات اللجنة</label><textarea id="evaluationNote" rows="2"></textarea></div>
+   <div class="field"><label>نتيجة التقييم</label><div class="kpi"><strong id="scoreTotal">0 / 100</strong><span id="evaluationMoney">0 ريال شهريًا</span></div></div>
+  </div>
+  <div class="actions"><button id="saveEvaluation">اعتماد التقييم الحالي</button></div>
+  <h3>التقييمات السابقة</h3><div id="evaluationHistory" class="muted"></div>
+ </div>
+</section>
+
+<section id="extras" class="panel">
+ <div class="card">
+  <h2>تسجيل العمل الإضافي</h2>
+  <p class="muted">المبلغ مقطوع لكل يوم بحسب نوع المهمة (من 3,000 إلى 7,000 ريال). لا يتطلب بصمة، ولا يُضاف للمسودة المالية إلا بعد اعتماده.</p>
+  <div class="grid">
+   <div class="field"><label for="extraEmployee">العامل</label><select id="extraEmployee"></select></div>
+   <div class="field"><label for="extraDate">يوم العمل</label><input id="extraDate" type="date"></div>
+   <div class="field"><label for="extraTask">نوع المهمة</label><input id="extraTask" placeholder="اسم المهمة"></div>
+   <div class="field"><label for="extraAmount">المبلغ</label><input id="extraAmount" type="number" min="3000" max="7000" value="3000"></div>
+  </div>
+  <div class="actions"><button id="saveExtra">تسجيل مهمة بانتظار الاعتماد</button></div>
+ </div>
+ <div class="card">
+  <h2>سجل الأعمال الإضافية للدورة المحددة</h2>
+  <div class="table-wrap"><table><thead><tr><th>العامل</th><th>التاريخ</th><th>المهمة</th><th>المبلغ</th><th>الحالة</th><th>الإجراء</th></tr></thead><tbody id="extrasBody"></tbody></table></div>
+ </div>
+</section>
+
+<section id="policy" class="panel">
+ <div class="card">
+  <h2>السياسة المالية الافتراضية</h2>
+  <p class="muted">أي تعديل يغير المسودات المستقبلية وغير المقفلة. لا تُعدّل القيم إلا من مدير النظام.</p>
+  <div class="grid" id="policyFields"></div>
+  <div class="actions"><button id="savePolicy">حفظ السياسة المالية</button></div>
+ </div>
+</section>
+</main>
+<script>
+(function(){
+'use strict';
+const $=id=>document.getElementById(id);
+const apiBase='/api/finance/';
+let employees=[], policy={},previewData=null,extraItems=[],role='';
+const labels={
+ salary:'الراتب الافتراضي',transport:'المواصلات الافتراضية',
+ living_base:'أول مربوط لغلاء المعيشة',family_each:'مبلغ الفرد الأسري',
+ experience_1_2:'خبرة من 1 إلى 2 سنة',experience_3_5:'خبرة من 3 إلى 5 سنوات',
+ experience_6_8:'خبرة من 6 إلى 8 سنوات',experience_9_plus:'خبرة 9 سنوات فما فوق',
+ rank_supervisor:'رتبة المشرف',rank_deputy:'رتبة النائب',
+ duty_supervisor:'ثقل مهمة المشرف',duty_deputy:'ثقل مهمة النائب',duty_acting:'ثقل مهمة النائب القائم مقام المشرف',duty_cashier:'ثقل مهمة أمين الصندوق',
+ evaluation_max:'الحد الأعلى للتقييم',allowed_minutes:'الرصيد الشهري بالدقائق',period_divisor:'مقسوم الراتب بالأيام',workday_minutes:'الدقائق المرجعية اليومية'
+};
+const scoreNames=['الاهتمام بالمظهر','اللغة السليمة عند التعامل مع الجميع','الالتزام في الدوام','تطوير أساليب العمل والتغلب على الصعوبات','أداء العمل على أحسن وأكمل وجه','التطوع بساعتين يوميًا أو ما يعادلها','تأثير العمل في المؤسسة على غيره'];
+const caps=[2,8,25,15,20,20,10],money=n=>Number(n||0).toLocaleString('en-US',{maximumFractionDigits:2});
+const safe=t=>String(t==null?'':t).replace(/[&<>"']/g,s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+function notice(message,bad){
+ const e=$('message');e.textContent=message;e.style.display='block';e.style.color=bad?'#a42d2d':'#116b43';e.scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+async function api(path,method='GET',value){
+ const r=await fetch(apiBase+path,{method,credentials:'same-origin',cache:'no-store',headers:value?{'content-type':'application/json'}:{},body:value?JSON.stringify(value):undefined});
+ const j=await r.json().catch(()=>({error:'تعذر قراءة استجابة الخادم'}));
+ if(!r.ok)throw new Error(j.error||'فشل الطلب '+r.status);
+ return j;
+}
+async function attempt(f){try{await f()}catch(e){notice(e.message||'خطأ غير متوقع',true)}}
+function setTab(id){
+ document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));
+ document.querySelectorAll('.panel').forEach(x=>x.classList.toggle('active',x.id===id));
+}
+document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>setTab(b.dataset.tab)));
+function selectOptions(){
+ const html='<option value="">اختر العامل</option>'+employees.map(e=>'<option value="'+safe(e.id)+'">'+safe(e.code+' — '+e.name)+'</option>').join('');
+ ['profileEmployee','evaluationEmployee','extraEmployee'].forEach(id=>{$(id).innerHTML=html;});
+ if(employees.length)['profileEmployee','evaluationEmployee','extraEmployee'].forEach(id=>{$(id).value=employees[0].id;});
+ setProfile();
+}
+function field(id,value){$(id).value=value===null||value===undefined?'':String(value)}
+function setProfile(){
+ const e=employees.find(e=>e.id===$('profileEmployee').value);
+ const p=e?.profile||{};
+ field('hire',p.hire_date);field('family',p.family_count);field('rank',p.rank||'none');field('duty',p.duty||'none');
+ field('sal',p.salary_override);field('transport',p.transport_override);
+ field('companyIns',p.company_insurance);field('totalIns',p.total_insurance);field('tax',p.income_tax);
+ field('achievement',p.achievement_bonus??0);
+}
+$('profileEmployee').addEventListener('change',setProfile);$('undoProfile').addEventListener('click',setProfile);
+$('saveProfile').addEventListener('click',()=>attempt(async()=>{
+ const id=$('profileEmployee').value;if(!id)throw Error('اختر العامل');
+ const val=id=>$(id).value.trim(),nullable=id=>val(id)===''?null:Number(val(id));
+ await api('profiles/'+encodeURIComponent(id),'PUT',{profile:{
+  hire_date:val('hire')||null,family_count:nullable('family'),rank:val('rank'),duty:val('duty'),
+  salary_override:nullable('sal'),transport_override:nullable('transport'),company_insurance:nullable('companyIns'),
+  total_insurance:nullable('totalIns'),income_tax:nullable('tax'),achievement_bonus:Number(val('achievement')||0)
+ }});
+ notice('حُفظت بيانات الاستحقاقات للعامل');
+ await loadEmployees();$('profileEmployee').value=id;setProfile();
+}));
+function renderEvaluation(){
+ $('evaluationRows').innerHTML=scoreNames.map((name,i)=>'<div class="evaluation-row"><label for="score'+i+'">'+safe(name)+'</label><input type="number" id="score'+i+'" min="0" max="'+caps[i]+'" step="0.5" value="0"><small>من '+caps[i]+'</small></div>').join('');
+ caps.forEach((_,i)=>$('score'+i).addEventListener('input',score));
+ score();
+}
+function score(){
+ const n=caps.map((cap,i)=>Number($('score'+i).value||0));
+ const sum=n.reduce((a,b)=>a+b,0);
+ $('scoreTotal').textContent=sum.toLocaleString('en-US')+' / 100';
+ $('evaluationMoney').textContent=money(sum*(policy.evaluation_max||15000)/100)+' ريال شهريًا';
+}
+async function loadHistory(){
+ const id=$('evaluationEmployee').value;if(!id)return;
+ const d=await api('evaluations?employee_id='+encodeURIComponent(id));
+ $('evaluationHistory').innerHTML=d.items.length?d.items.map(x=>'<div>'+safe(x.effective_month)+' — '+money(x.scores.reduce((a,b)=>a+b,0))+' درجة من 100</div>').join(''):'لا توجد تقييمات معتمدة';
+}
+$('evaluationEmployee').addEventListener('change',()=>attempt(loadHistory));
+$('saveEvaluation').addEventListener('click',()=>attempt(async()=>{
+ const employee_id=$('evaluationEmployee').value,effective_month=$('evaluationMonth').value;
+ if(!employee_id)throw Error('اختر العامل');
+ const scores=caps.map((cap,i)=>Number($('score'+i).value));
+ if(scores.some((v,i)=>!Number.isFinite(v)||v<0||v>caps[i]))throw Error('الدرجات تتجاوز الحدود المحددة');
+ if(!confirm('هل اعتمدت اللجنة التقييم الجماعي، وتريد حفظ نتيجته لهذا الشهر؟'))return;
+ const d=await api('evaluations','POST',{employee_id,effective_month,scores,note:$('evaluationNote').value});
+ notice('اعتُمد التقييم بمجموع '+d.total_points+' درجة');
+ await loadHistory();await loadPreview();
+}));
+function renderPolicy(){
+ $('policyFields').innerHTML=Object.entries(labels).map(([key,label])=>'<div class="field"><label for="policy_'+key+'">'+safe(label)+'</label><input type="number" min="0" id="policy_'+key+'" value="'+safe(policy[key])+'"></div>').join('');
+ $('savePolicy').disabled=role!=='admin';
+}
+$('savePolicy').addEventListener('click',()=>attempt(async()=>{
+ const data={};for(const key of Object.keys(labels))data[key]=Number($('policy_'+key).value);
+ const res=await api('policy','PUT',{policy:data});policy=res.policy;
+ notice('حُفظت سياسة الاستحقاقات');await loadPreview();
+}));
+function monthCycle(month){
+ const [y,m]=month.split('-').map(Number);
+ return month?month:'';
+}
+async function loadEmployees(){
+ const j=await api('profiles');const old=$('profileEmployee').value;
+ employees=j.items||[];
+ selectOptions();if(employees.some(e=>e.id===old)){$('profileEmployee').value=old;setProfile();}
+}
+function renderPreview(){
+ const d=previewData;if(!d)return;
+ $('cycleLabel').textContent='من '+d.cycle.from+' إلى '+d.cycle.to+' — '+d.cycle.month;
+ const q=$('query').value.trim().toLowerCase();
+ const rows=d.items.filter(x=>(x.name+' '+x.code).toLowerCase().includes(q));
+ $('stats').innerHTML='<div class="kpi">العاملون<strong>'+d.counts.workers+'</strong></div><div class="kpi">ملفات ناقصة<strong>'+d.counts.profiles_missing+'</strong></div><div class="kpi">تسوية حضور غير مكتملة<strong>'+d.counts.attendance_unreviewed+'</strong></div>';
+ $('previewBody').innerHTML=rows.map(x=>{
+ const inc=x.incentive,missing=x.incomplete_fields.join('، ');
+ return '<tr><td><strong>'+safe(x.name)+'</strong><div class="muted">'+safe(x.code)+'</div></td>'+
+ '<td>'+money(x.salary.net)+(x.salary.complete?'':'*')+'</td>'+
+ '<td>'+(inc.living===null?'—':money(inc.living))+'</td>'+
+ '<td>'+(inc.experience===null?'—':money(inc.experience))+'</td>'+
+ '<td>'+money(inc.rank+inc.duty)+'</td><td>'+money(inc.evaluation)+'</td>'+
+ '<td>'+money(inc.achievement+inc.approved_extra)+'</td>'+
+ '<td><strong>'+money(inc.subtotal_before_attendance)+'</strong></td>'+
+ '<td class="notready">'+(missing?'ناقص: '+safe(missing)+'؛ ':'')+'الدوام قيد المراجعة</td></tr>';
+ }).join('')||'<tr><td colspan="9">لا توجد نتائج</td></tr>';
+ $('previewFoot').textContent='هذه المبالغ تقديرية قبل التحقق من الحضور ولا تصلح للصرف. النجمة (*) تعني أن بيانات التأمين أو الضريبة لم تستكمل. مجموع الحافز لا يشمل تسوية دقائق الدوام أو خصم ما بعد الثامنة.';
+}
+async function loadPreview(){
+ const month=$('month').value;
+ if(!month)return;
+ previewData=await api('preview?month='+encodeURIComponent(month));renderPreview();
+}
+$('query').addEventListener('input',renderPreview);
+$('refresh').addEventListener('click',()=>attempt(loadPreview));
+$('print').addEventListener('click',()=>window.print());
+async function loadExtras(){
+ const month=$('month').value;if(!month)return;
+ const d=await api('extras?month='+encodeURIComponent(month));extraItems=d.items;
+ $('extrasBody').innerHTML=extraItems.map(x=>
+ '<tr><td>'+safe(x.employee_name)+'</td><td>'+safe(x.work_date)+'</td><td>'+safe(x.task)+'</td><td>'+money(x.amount)+'</td>'+
+ '<td>'+safe(x.status==='pending'?'بانتظار الاعتماد':x.status==='approved'?'معتمد':'مرفوض')+'</td>'+
+ '<td>'+(x.status==='pending'&&['admin','accountant'].includes(role)?'<button type="button" data-extra="'+safe(x.id)+'" data-decision="approved">اعتماد</button> <button class="secondary" type="button" data-extra="'+safe(x.id)+'" data-decision="rejected">رفض</button>':'—')+'</td></tr>').join('')||'<tr><td colspan="6">لا توجد مهام إضافية</td></tr>';
+ document.querySelectorAll('[data-extra]').forEach(b=>b.addEventListener('click',()=>attempt(async()=>{
+  if(!confirm('تأكيد قرار العمل الإضافي؟'))return;
+  await api('extras/'+encodeURIComponent(b.dataset.extra)+'/decision','POST',{status:b.dataset.decision});
+  await loadExtras();await loadPreview();notice('تم حفظ القرار');
+ })));
+}
+$('saveExtra').addEventListener('click',()=>attempt(async()=>{
+ const employee_id=$('extraEmployee').value;if(!employee_id)throw Error('اختر العامل');
+ await api('extras','POST',{employee_id,work_date:$('extraDate').value,task:$('extraTask').value,amount:Number($('extraAmount').value)});
+ $('extraTask').value='';await loadExtras();notice('سُجلت المهمة بانتظار الاعتماد');
+}));
+$('month').addEventListener('change',()=>attempt(async()=>{await loadPreview();await loadExtras();}));
+async function start(){
+ try{
+  const me=await fetch('/api/me',{credentials:'same-origin',cache:'no-store'});
+  if(!me.ok){window.location.assign('/');return;}
+  const identity=await me.json();role=identity.user?.role||'';
+  if(!['admin','accountant','hr'].includes(role)){notice('هذا الحساب لا يملك صلاحية الاطلاع على الاستحقاقات',true);return;}
+  const d=new Date(),month=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Aden',year:'numeric',month:'2-digit'}).format(d).replace('/','-');
+  $('month').value=/^\d{4}-\d{2}$/.test(month)?month:d.toISOString().slice(0,7);
+  $('evaluationMonth').value=$('month').value;$('extraDate').value=d.toISOString().slice(0,10);
+  const p=await api('policy');policy=p.policy;
+  renderPolicy();renderEvaluation();await loadEmployees();
+  if(role==='hr'){$('refresh').disabled=true;document.querySelector('[data-tab="preview"]').disabled=true;setTab('profiles');}
+  else await loadPreview();
+  await loadExtras();await loadHistory();
+ }catch(e){notice(e.message,true);}
+}
+start();
+})();
+</script>
+</body>
+</html>

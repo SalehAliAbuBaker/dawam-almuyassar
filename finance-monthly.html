@@ -290,7 +290,8 @@ async function start(){
   $('evaluationMonth').value=$('month').value;$('extraDate').value=d.toISOString().slice(0,10);
   const p=await api('policy');policy=p.policy;
   renderPolicy();renderEvaluation();await loadEmployees();
-  if(role==='hr'){$('refresh').disabled=true;document.querySelector('[data-tab="preview"]').disabled=true;setTab('profiles');}
+  if(role!=='admin')$('saveEvaluation').disabled=true;
+  if(role==='hr'){$('saveProfile').disabled=true;$('refresh').disabled=true;document.querySelector('[data-tab="preview"]').disabled=true;setTab('profiles');}
   else await loadPreview();
   await loadExtras();await loadHistory();
  }catch(e){notice(e.message,true);}

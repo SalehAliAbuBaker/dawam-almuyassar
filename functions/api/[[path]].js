@@ -1099,7 +1099,7 @@ export async function onRequest(context) {
       if (method!=='POST') return reject(405,'طريقة غير مدعومة؛ استخدم POST');
       return importMb10Punches(context);
     }
-    if (path==='status' && method==='GET') return response({setupRequired:await setupRequired(db),version:'0.2.24',pushConfigured:pushConfigured(env)});
+    if (path==='status' && method==='GET') return response({setupRequired:await setupRequired(db),version:'0.2.25',pushConfigured:pushConfigured(env)});
     if (path==='setup' && method==='POST') return initialSetup(db,env,request);
     if (path==='login' && method==='POST') return login(db,request);
     const user=await sessionUser(db,request);

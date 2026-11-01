@@ -184,8 +184,8 @@ function renderSelected(){
  employee.value=r.employee_id||'';
  $('accountDept').value=r.department_scope||'';
  const stored=originalPermissions[r.id+'|data.self_only'];
- initialScope=r.role==='viewer'?'allow':stored===true?'allow':'default';
- scope.value=r.role==='admin'?'default':initialScope;
+ initialScope=stored===true?'allow':'default';
+ scope.value=r.role==='viewer'?'allow':r.role==='admin'?'default':initialScope;
  $('accountStatus').textContent=(r.is_active?'حساب نشط':'حساب موقوف')+' · '+(roles[r.role]||r.role)+(r.must_change_password?' · مطلوب تغيير كلمة المرور عند الدخول':'');
  renderPermissions();renderState();
 }
@@ -213,7 +213,7 @@ async function load(focusId){
 }
 user.addEventListener('change',()=>{renderSelected()});
 for(const id of ['accountName','accountEmail','accountRole','accountActive','employee','accountDept','scope']){
- $(id).addEventListener(id==='accountRole'||id==='accountActive'||id==='employee'||id==='scope'?'change':'input',renderState);
+ $(id).addEventListener(id==='accountRole'||id==='accountActive'||id==='employee'||id==='scope'?'change':'input',()=>{if(id==='accountRole'&&selected()?.role==='viewer'&&$('accountRole').value!=='viewer')scope.value=initialScope;renderState()});
 }
 $('undo').addEventListener('click',()=>{renderSelected();notice('أُلغيت التعديلات غير المحفوظة.')});
 $('reload').addEventListener('click',()=>load());
@@ -262,8 +262,8 @@ $('reset').addEventListener('click',async()=>{
   await api(endpoint,{method:'POST',headers:header,body:JSON.stringify(body)});
   clearPasswords();busy=false;
   if(self){notice('تغيرت كلمة مرورك بنجاح. يرجى تسجيل الدخول مجددًا.','success');window.location.assign('/');return}
-  $('passwordMsg').textContent='نجحت إعادة التعيين. سيغير المستخدم كلمة المرور المؤقتة عند أول دخول، وقد أُلغيت جلساته القديمة.';
   await load(r.id);
+  $('passwordMsg').textContent='نجحت إعادة التعيين. سيغير المستخدم كلمة المرور المؤقتة عند أول دخول، وقد أُلغيت جلساته القديمة.';
  }catch(e){busy=false;renderState();$('passwordMsg').textContent='تعذرت إعادة التعيين: '+e.message}
 });
 $('create').addEventListener('click',async()=>{

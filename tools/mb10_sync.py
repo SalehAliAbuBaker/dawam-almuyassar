@@ -13,6 +13,10 @@ import urllib.request
 from datetime import datetime
 from zk import ZK
 
+# Cloudflare Pages may block the standard Python-urllib User-Agent with HTTP 403/1010.
+# Use an explicit application identity on every HTTPS call, retaining Bearer auth.
+USER_AGENT = 'DawamMuyassar-MB10Agent/0.2.17 (+https://dawam-muyassar-stage.pages.dev)'
+
 def collect(ip, port, password):
     zk = ZK(ip, port=port, timeout=15, password=password, force_udp=False, ommit_ping=False)
     connection = zk.connect()
@@ -71,7 +75,8 @@ def main():
         batch = items[offset:offset + 100]
         data = json.dumps({'items': batch}).encode('utf-8')
         request = urllib.request.Request(base + '/api/device-import', data=data, method='POST',
-            headers={'Content-Type':'application/json', 'Authorization':'Bearer '+token})
+            headers={'Content-Type':'application/json', 'Authorization':'Bearer '+token,
+                     'User-Agent': USER_AGENT, 'Accept': 'application/json'})
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
                 result = json.load(response)
@@ -84,7 +89,8 @@ def main():
 def request_json(base, token, suffix, payload=None):
     data = json.dumps(payload).encode('utf-8') if payload is not None else None
     req = urllib.request.Request(base + '/api/' + suffix, data=data,
-        headers={'Authorization':'Bearer '+token, 'Content-Type':'application/json'},
+        headers={'Authorization':'Bearer '+token, 'Content-Type':'application/json',
+                 'User-Agent': USER_AGENT, 'Accept': 'application/json'},
         method='POST' if data is not None else 'GET')
     with urllib.request.urlopen(req, timeout=35) as response:
         return json.load(response)
@@ -123,6 +129,14 @@ def agent(args, password):
         except KeyboardInterrupt:
             print('Agent stopped.')
             return
+        except urllib.error.HTTPError as exc:
+            # Do not retry rejected credentials / blocked client requests forever.
+            if exc.code in (401, 403):
+                print(f'Sync request rejected (HTTP {exc.code}). '
+                      '401: verify the office MB10 token matches Cloudflare; '
+                      '403: check Cloudflare edge/client policy or deployment.', flush=True)
+                raise SystemExit(1)
+            print(f'Sync HTTP error: {exc.code} {exc.reason}', flush=True)
         except Exception as exc:
             print('Sync error:',type(exc).__name__,str(exc)[:200],flush=True)
             if job_id:

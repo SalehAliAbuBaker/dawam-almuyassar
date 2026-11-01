@@ -21,7 +21,13 @@ export async function onRequestPost({request,env}) {
   const secret=env.MB10_IMPORT_TOKEN;
   const auth=request.headers.get('authorization')||'';
   if(typeof secret!=='string'||secret.length<32)return json({error:'Import not configured'},503);
-  if(!auth.startsWith('Bearer ')||!equal(auth.slice(7),secret))return json({error:'Unauthorized'},401);
+  // The backup PC has a separately revocable credential. Both upload to the
+  // SAME device_id using unchanged fingerprints, so re-import is idempotent.
+  const backupSecret=env.MB10_BACKUP_TOKEN;
+  const token=auth.startsWith('Bearer ')?auth.slice(7):'';
+  const primaryOk=equal(token,secret);
+  const backupOk=typeof backupSecret==='string'&&backupSecret.length>=32&&equal(token,backupSecret);
+  if(!primaryOk&&!backupOk)return json({error:'Unauthorized'},401);
   if(!(request.headers.get('content-type')||'').toLowerCase().startsWith('application/json'))return json({error:'JSON required'},415);
   let data;
   try{

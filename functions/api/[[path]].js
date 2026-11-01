@@ -723,7 +723,7 @@ function classifyDayMovements(items,sch){
  const groups=new Map();
  for(const item of items){
    item.movement_type='review';item.permission_minutes=0;
-   item.review_reason=!item.employee_id?'رقم البصمة غير مربوط بعامل':!['in','out'].includes(item.kind)?'رمز حركة غير معروف من الجهاز':null;
+   item.review_reason=!item.employee_id?'رقم البصمة غير مربوط بعامل':!['in','out'].includes(item.kind)?'رمز حركة غير محدد من جهاز MB10 ('+(item.punch_code==null?'غير متوفر':item.punch_code)+')':null;
    if(!item.employee_id)continue;
    const time=item.effective_timestamp||item.timestamp||item.occurred_at_device;
    const key=item.employee_id+'|'+String(time).slice(0,10);
@@ -942,7 +942,7 @@ export async function onRequest(context) {
       if (method!=='POST') return reject(405,'طريقة غير مدعومة؛ استخدم POST');
       return importMb10Punches(context);
     }
-    if (path==='status' && method==='GET') return response({setupRequired:await setupRequired(db),version:'0.2.17',pushConfigured:pushConfigured(env)});
+    if (path==='status' && method==='GET') return response({setupRequired:await setupRequired(db),version:'0.2.18',pushConfigured:pushConfigured(env)});
     if (path==='setup' && method==='POST') return initialSetup(db,env,request);
     if (path==='login' && method==='POST') return login(db,request);
     const user=await sessionUser(db,request);

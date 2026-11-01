@@ -1,4 +1,5 @@
 import { onRequestPost as importMb10Punches } from './device-import.js';
+import { financeEndpoint } from '../../lib/finance-module.js';
 import {pushConfigured,validatePushSubscription} from '../../lib/push-web.js';
 import {notifyWorkersAfterSuccessfulSync,sendPersonalTest,ensurePushStorage} from '../../lib/push-alerts.js';
 /* دوام الميسر 0.2.0 — Phase 1 API (Cloudflare Pages Functions + D1).
@@ -1093,7 +1094,7 @@ export async function onRequest(context) {
       if (method!=='POST') return reject(405,'طريقة غير مدعومة؛ استخدم POST');
       return importMb10Punches(context);
     }
-    if (path==='status' && method==='GET') return response({setupRequired:await setupRequired(db),version:'0.2.26',pushConfigured:pushConfigured(env)});
+    if (path==='status' && method==='GET') return response({setupRequired:await setupRequired(db),version:'0.2.27',pushConfigured:pushConfigured(env)});
     if (path==='setup' && method==='POST') return initialSetup(db,env,request);
     if (path==='login' && method==='POST') return login(db,request);
     const user=await sessionUser(db,request);
@@ -1144,6 +1145,7 @@ export async function onRequest(context) {
       const result=await sendPersonalTest(db,env,user);
       return result.error?reject(result.status||503,result.error):response(result);
     }
+    if (path.startsWith('finance/')) return financeEndpoint(db,user,request,path.slice('finance/'.length),user.organization_id||ORG);
     if (path==='my-attendance' && method==='GET') return myAttendance(db,user,request);
     if (path==='my-punch-report' && method==='POST') return myPunchReport(db,user,request);
     if (path==='attendance-register' && method==='GET') return attendanceRegister(db,user,request);

@@ -67,7 +67,7 @@ body.embedded .pager{padding-bottom:24px}
 <div id="status" class="status" role="status">اختر خيارات البحث ثم اضغط «عرض النتائج».</div>
 </section>
 <section class="panel">
-<div class="legend" aria-label="دليل ألوان الحركات"><span class="movement-tag attendance">● حضور</span><span class="movement-tag departure">● انصراف</span><span class="movement-tag permission_exit">● استعذار: خروج وعودة</span><span class="movement-tag review">● بحاجة إلى مراجعة</span></div>
+<div class="legend" aria-label="دليل ألوان الحركات"><span class="movement-tag attendance">● حضور</span><span class="movement-tag departure">● انصراف</span><span class="movement-tag permission_exit">● استعذار: خروج وعودة</span><span class="movement-tag review">● حركة غير محددة أو تسلسل غير مكتمل</span></div>
 <div class="stat"><span id="total">عدد الحركات: —</span><span id="shown">المعروض: —</span><span id="pageText">صفحة 1</span></div>
 <div class="actions">
 <button id="previewBtn">معاينة التقرير</button>
@@ -77,7 +77,7 @@ body.embedded .pager{padding-bottom:24px}
 <div class="table-wrap"><table><thead><tr><th>م</th><th>العامل</th><th>رقم العامل</th><th>رقم البصمة</th><th>التاريخ</th><th>الوقت</th><th>الحركة</th><th>المصدر</th><th>الحالة</th></tr></thead>
 <tbody id="rows"><tr><td colspan="9">لم تُحمّل البيانات بعد.</td></tr></tbody></table></div>
 <div class="pager"><button class="secondary" id="prev">السابق</button><span id="pageIndex">1</span><button class="secondary" id="next">التالي</button></div>
-<p class="muted">تُحفظ البيانات في Cloudflare؛ يتطلب استعراض السجل والمشاركة اتصالًا بالإنترنت وصلاحية دخول. المعاينة والطباعة والمشاركة تشمل نتائج الفلترة كلها ضمن حد 5000 حركة، لا الصفحة المعروضة فقط.</p>
+<p class="muted">الحركة غير المحددة تعني أن جهاز MB10 لم يرسل رمز حضور أو انصراف واضحًا؛ ولا تعني غياب العامل. يوضح عمود «الحالة» السبب الفعلي، ويمكن للمسؤول تصحيح الحركة دون حذف أصلها. يتطلب عرض السجل اتصالًا وصلاحية دخول، وتشمل المعاينة والطباعة والمشاركة جميع نتائج الفلترة ضمن حد 5000 حركة.</p>
 </section>
 <dialog id="previewDialog" aria-label="معاينة الحضور والبصمة">
 <div class="actions not-print"><button id="close">إغلاق المعاينة</button><button id="doPrint">طباعة / PDF</button></div>
@@ -112,10 +112,28 @@ async function api(url){let res;try{res=await fetch(url,{credentials:'same-origi
 function td(row,value){const cell=document.createElement('td');cell.textContent=value==null?'':String(value);row.append(cell);return cell}
 function formatDate(item){return (item.timestamp||'').slice(0,10)}
 function formatTime(item){return (item.timestamp||'').slice(11,19)}
-function itemStatus(item){if(!item.employee_id)return 'غير مطابق';if(item.movement_type==='review'||item.kind==='other')return 'بحاجة إلى مراجعة: '+(item.review_reason||'تسلسل الحركة غير مكتمل');if(item.movement_type==='permission_return')return 'استعذار '+Number(item.permission_minutes||0)+' دقيقة'+(item.corrected?' — مصححة':'');return item.corrected?'مصححة':'مسجلة'}
-const movementLabels={attendance:'حضور',departure:'انصراف',permission_exit:'استعذار — خروج مؤقت',permission_return:'استعذار — عودة',review:'بحاجة إلى مراجعة'};
-function movementLabel(item){return movementLabels[item.movement_type]||kinds[item.kind]||'غير محدد'}
-function movementCell(row,item){const el=td(row,'');const tag=document.createElement('span');tag.className='movement-tag '+(item.movement_type||'review');tag.textContent=movementLabel(item);el.append(tag)}
+function itemStatus(item){
+ if(!item.employee_id)return 'رقم البصمة غير مربوط بعامل';
+ if(item.movement_type==='review'||item.kind==='other')return item.review_reason||'تسلسل الحركة غير مكتمل';
+ if(item.movement_type==='permission_return')return 'استعذار '+Number(item.permission_minutes||0)+' دقيقة'+(item.corrected?' — مصححة':'');
+ return item.corrected?'مصححة':'مسجلة';
+}
+const movementLabels={attendance:'حضور',departure:'انصراف',permission_exit:'استعذار — خروج مؤقت',permission_return:'استعذار — عودة'};
+function reviewMovementLabel(item){
+ const reason=String(item.review_reason||'');
+ if(!item.employee_id)return 'رقم غير مرتبط';
+ if(item.kind==='other'||reason.includes('رمز حركة'))return 'حركة غير محددة';
+ if(reason.includes('دخول مكرر'))return 'دخول مكرر';
+ if(reason.includes('خروج مكرر'))return 'انصراف مكرر';
+ if(reason.includes('خروج دون حضور'))return 'انصراف دون حضور';
+ if(reason.includes('عودة'))return 'عودة غير مؤكدة';
+ return 'تسلسل غير مكتمل';
+}
+function movementLabel(item){
+ if(item.movement_type==='review')return reviewMovementLabel(item);
+ return movementLabels[item.movement_type]||kinds[item.kind]||'غير محدد';
+}
+function movementCell(row,item){const el=td(row,'');const tag=document.createElement('span');tag.className='movement-tag '+(item.movement_type||'review');tag.textContent=movementLabel(item);if(item.movement_type==='review')tag.title=item.review_reason||'حركة غير مكتملة التسلسل';el.append(tag)}
 function itemName(item){return item.employee_name||'غير مطابق'}
 function makeRow(item,n,interactive=false){const tr=document.createElement('tr');td(tr,n);td(tr,itemName(item));td(tr,item.employee_code||'—');td(tr,item.device_user_id||'—');td(tr,formatDate(item));td(tr,formatTime(item));movementCell(tr,item);td(tr,sources[item.source]||item.source);const status=td(tr,itemStatus(item));if(interactive&&canCorrectDevice&&item.source==='device'&&!item.corrected&&item.movement_type==='review'&&item.device_event_id){const link=document.createElement('a');link.textContent='تصحيح الحركة';link.href='/manage-punches.html?date='+encodeURIComponent(formatDate(item))+'&fingerprint='+encodeURIComponent(item.device_event_id);link.style.marginInlineStart='9px';status.append(' — ',link)}return tr}
 async function load(resetPage=true){if(loading)return;if(resetPage)page=1;const f=readFilters();if(f.from&&f.to&&f.from>f.to){message('تاريخ البداية لا يمكن أن يكون بعد تاريخ النهاية.',true);return}

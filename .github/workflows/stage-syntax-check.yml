@@ -21,9 +21,10 @@ jobs:
           node --check "user-management-modal.js"
           node --check "lib/push-web.js"
           node --check "lib/push-alerts.js"
+          node --check "lib/finance-module.js"
           node --check "offline-sw.js"
           python3 -m py_compile tools/mb10_sync.py
-          node --test tests/push-web.test.mjs
+          node --test tests/push-web.test.mjs tests/finance-core.test.mjs
           python3 - <<'PY'
           from html.parser import HTMLParser
           from pathlib import Path
@@ -40,7 +41,7 @@ jobs:
                   if tag=='script' and self.inside:
                       self.scripts.append(''.join(self.parts))
                       self.inside=False
-          for page in ['users-permissions.html','my-attendance.html','mb10-sync.html']:
+          for page in ['users-permissions.html','my-attendance.html','mb10-sync.html','finance-monthly.html']:
               parser=Scripts()
               parser.feed(Path(page).read_text(encoding='utf8'))
               assert parser.scripts, f'{page}: no inline script'

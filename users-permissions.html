@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>إدارة المستخدمين والصلاحيات | دوام الميسر 0.2.25</title>
+<title>إدارة المستخدمين والصلاحيات | دوام الميسر 0.2.26</title>
 <style>
 :root{font-family:Tahoma,Arial,sans-serif;color:#173d2b;background:#f5f8f5}
 *{box-sizing:border-box}body{margin:0;padding:12px}main{max-width:940px;margin:16px auto;background:#fff;padding:clamp(14px,3vw,26px);border-radius:18px;box-shadow:0 4px 22px #0001}
@@ -19,17 +19,41 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 .msg.error{background:#fff3f0;border-color:#ebc4b6;color:#903d2d}.msg.success{background:#e8f7ed;border-color:#bfe4ca;color:#126234}
 .hidden{display:none!important}.perm{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:10px 0;border-bottom:1px solid #edf1ed}
 .perm select{width:min(330px,100%)}.pill{font-size:.85rem;padding:5px 9px;border-radius:8px;background:#eef5ef}
-a{color:#087847}footer{display:flex;gap:20px;flex-wrap:wrap;margin:18px 0}
+a{color:#087847}footer{display:flex;gap:20px;flex-wrap:wrap;margin:14px 0}
+.screen-tab{display:none!important}.screen-tab.selected{display:block!important}
+.tabbar{display:flex;flex-wrap:wrap;gap:8px;border-bottom:1px solid #d9e7dc;margin:12px 0;padding-bottom:10px}
+.tabbar button{background:#edf5ef;color:#145a3b;border:1px solid #d8e8db;min-height:40px;padding:8px 13px}
+.tabbar button.active{background:#087847;color:#fff}
+.screen-tab.panel{margin:12px 0;border:1px solid #e0eae3;border-radius:14px;padding:16px}
+#msg.success{display:none}#msg.error{display:block}#msg{font-size:.9rem}
+#mainActions{position:sticky;bottom:0;background:#fff;border-top:1px solid #dce8df;padding:12px 0;display:flex;gap:10px;flex-wrap:wrap;z-index:2}
+#mainActions.hidden{display:none!important}
+#reset,#save{font-weight:700}body{padding:12px;background:#f5f8f5}
+main{width:min(1100px,100%);max-width:1100px;margin:16px auto;padding:20px}
+header.page-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+header.page-head h1{margin:0;font-size:1.35rem}
+#accountStatus{margin:8px 0}#user{max-width:100%}
+#passwordMsg:not(:empty){background:#eff7ef;padding:10px;border-radius:8px}
+#disableAccount{font-size:.88rem}
+@media(max-width:620px){.tabbar{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.tabbar button{font-size:.88rem}#mainActions button{flex:1}}
+
 @media(max-width:620px){.grid{grid-template-columns:1fr}.perm select{width:100%}main{padding:13px}}
 body.embedded{padding:0;background:white}body.embedded main{max-width:none;margin:0;padding:10px;box-shadow:none;border-radius:0}body.embedded footer,body.embedded #createPanel{display:none}
 </style></head><body><main>
-<h1>إدارة المستخدمين والصلاحيات</h1>
-<small>دوام الميسر — الإصدار التجريبي 0.2.25</small>
-<p class="hint">يمكن للمدير تعديل الحسابات والصلاحيات وإعادة تعيين كلمات المرور دون حذف بيانات العاملين أو حركات البصمة. تُسجل التغييرات في سجل التدقيق.</p>
+<header class="page-head"><h1>إدارة المستخدمين</h1><a href="./" aria-label="العودة إلى التطبيق">العودة إلى التطبيق</a></header>
+<small>النسخة التجريبية 0.2.26</small>
+<p class="hint">اختر المستخدم، ثم عدّل البيانات أو الصلاحيات أو كلمة المرور من التبويب المطلوب.</p>
 <div id="msg" class="msg" role="status">جارٍ التحقق من الحساب الإداري...</div>
-<div class="row"><button id="reload" class="secondary" type="button">تحديث قائمة المستخدمين</button><span id="counter" class="pill"></span></div>
+<div class="row"><button id="reload" class="secondary" type="button">تحديث القائمة</button><span id="counter" class="pill"></span></div>
+<nav class="tabbar" aria-label="أقسام إدارة المستخدمين">
+<button type="button" data-panel="accountPanel" class="active" aria-pressed="true">بيانات الحساب</button>
+<button type="button" data-panel="permissionsPanel" aria-pressed="false">الصلاحيات</button>
+<button type="button" data-panel="securityPanel" aria-pressed="false">كلمة المرور</button>
+<button type="button" data-panel="createPanel" aria-pressed="false">مستخدم جديد</button>
+<button type="button" data-panel="auditPanel" aria-pressed="false">سجل التعديلات</button>
+</nav>
 
-<details class="panel" id="createPanel">
+<details class="panel screen-tab" id="createPanel">
 <summary>+ إضافة مستخدم جديد</summary>
 <p class="hint">كلمة المرور الأولية يجب أن تتكون من 12 حرفًا على الأقل، وسيُلزم المستخدم بتغييرها عند أول دخول.</p>
 <div class="grid">
@@ -45,8 +69,8 @@ body.embedded{padding:0;background:white}body.embedded main{max-width:none;margi
 <div id="createMsg" class="hint" role="status"></div>
 </details>
 
-<section class="panel" aria-label="اختيار حساب">
-<h2>تعديل حساب موجود</h2>
+<section class="panel screen-tab selected" id="accountPanel" aria-label="بيانات حساب المستخدم">
+<h2>بيانات الحساب</h2>
 <label for="user">اختر المستخدم</label>
 <select id="user" disabled></select>
 <p id="accountStatus" class="hint"></p>
@@ -59,10 +83,11 @@ body.embedded{padding:0;background:white}body.embedded main{max-width:none;margi
 <div class="field"><label for="accountDept">قسم المشرف</label><input id="accountDept" list="departments" maxlength="100" autocomplete="off"></div>
 </div>
 <datalist id="departments"></datalist>
-<p class="hint">تعديل ربط العامل أو الدور يلغي جلسات الدخول السابقة للحماية. إيقاف الحساب يمنع الدخول، ولا يحذف سجلاته.</p>
+<p class="hint">تعديل ربط العامل أو الدور يلغي الجلسات القديمة، وإيقاف الحساب يمنع الدخول دون حذف سجلات الحضور.</p>
+<div class="row"><button id="disableAccount" type="button" class="danger">إلغاء الحساب (إيقاف آمن)</button></div>
 </section>
 
-<section class="panel">
+<section class="panel screen-tab" id="permissionsPanel">
 <h2>نطاق البيانات والصلاحيات</h2>
 <label for="scope">نطاق البيانات</label>
 <select id="scope"><option value="default">بحسب الدور</option><option value="allow">بيانات المستخدم نفسه فقط</option></select>
@@ -70,28 +95,29 @@ body.embedded{padding:0;background:white}body.embedded main{max-width:none;margi
 <h3>الصلاحيات التفصيلية</h3>
 <div id="items"></div>
 <p class="hint">الصلاحيات المحددة تُطبّق مع ضوابط الخادم؛ السماح في الواجهة لا يتجاوز قيود دور المستخدم أو النطاق الشخصي. المدير يملك صلاحيات الإدارة وفق دور المدير.</p>
-<div class="row"><button type="button" id="save" disabled>حفظ تعديلات الحساب والصلاحيات</button><button type="button" id="undo" class="secondary">التراجع عن التعديلات غير المحفوظة</button></div>
 </section>
 
-<section class="panel">
-<h2>كلمات المرور والأمان</h2>
-<p id="passwordHint" class="hint">اختر المستخدم لعرض أداة إعادة تعيين كلمة المرور.</p>
+<section class="panel screen-tab" id="securityPanel">
+<h2>تعيين كلمة مرور جديدة</h2>
+<p id="passwordHint" class="hint">يمكن للمدير إبطال كلمة المرور السابقة وتعيين كلمة جديدة دون معرفتها.</p>
 <div class="grid">
-<div class="field"><label for="adminPassword" id="adminPasswordLabel">كلمة المرور الحالية للمدير (للتأكيد)</label><input type="password" id="adminPassword" maxlength="128" autocomplete="current-password"></div>
+<div class="field" id="adminPwdField"><label for="adminPassword" id="adminPasswordLabel">كلمة المرور الحالية لحسابك</label><input type="password" id="adminPassword" maxlength="128" autocomplete="current-password"></div>
+<div class="field" id="confirmEmailField"><label for="confirmEmail">تأكيد البريد الإلكتروني للحساب المحدد</label><input id="confirmEmail" type="email" maxlength="180" autocomplete="off" placeholder="اكتب بريد المستخدم للتأكيد"></div>
 <div class="field"><label for="resetPassword">كلمة المرور الجديدة</label><input type="password" id="resetPassword" minlength="12" maxlength="128" autocomplete="new-password"></div>
 <div class="field"><label for="confirmPassword">تأكيد كلمة المرور الجديدة</label><input type="password" id="confirmPassword" minlength="12" maxlength="128" autocomplete="new-password"></div>
 </div>
-<p class="hint">لا يمكن عرض كلمة المرور القديمة. عند إعادة التعيين تُنهى جلسات المستخدم ويُطلب منه تغيير كلمة المرور المؤقتة عند أول دخول. يُلغى أيضًا اشتراك إشعارات الجوال القديم للحماية.</p>
-<div class="row"><button id="reset" class="danger" type="button" disabled>إعادة تعيين كلمة المرور</button></div>
+<p class="hint">لا حاجة إلى كلمة المرور القديمة للمستخدم. ستُلغى جلساته السابقة، وسيُطلب منه تغيير الكلمة المؤقتة عند تسجيل الدخول.</p>
+<div class="row"><button id="reset" type="button" disabled>حفظ كلمة المرور الجديدة</button></div>
 <div id="passwordMsg" class="hint" role="status"></div>
 </section>
-<details class="panel">
+<details class="panel screen-tab" id="auditPanel">
 <summary>سجل تعديلات حسابات المستخدمين</summary>
 <p class="hint">يعرض أبرز تعديلات الحسابات وكلمات المرور والصلاحيات، دون إظهار أي كلمة مرور أو رمز سري.</p>
 <button type="button" id="loadAudit" class="secondary">عرض آخر التعديلات</button>
 <div id="auditItems" class="hint" role="status"></div>
 </details>
-<footer><a href="./my-attendance.html">دوامي وتنبيهاتي</a><a href="./">العودة إلى التطبيق</a></footer>
+<div class="row" id="mainActions"><button type="button" id="save" disabled>حفظ التعديلات</button><button type="button" id="undo" class="secondary">التراجع</button></div>
+<footer><a href="./my-attendance.html">دوامي وتنبيهاتي</a><a href="./">العودة</a></footer>
 </main>
 <script>
 'use strict';

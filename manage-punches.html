@@ -15,13 +15,26 @@
 <div id="deviceStatus" class="status">اختر التاريخ واضغط استعراض.</div><div class="list"><table><thead><tr><th>العامل</th><th>وقت الجهاز</th><th>نوع الحركة</th><th>سبب المراجعة</th><th>الإجراء</th></tr></thead><tbody id="deviceRows"></tbody></table></div></section>
 <dialog id="editor"><form id="editForm"><h2>تصحيح بصمة جهاز</h2><p class="muted">سيبقى السجل الأصلي محفوظًا كما هو. هذا تصحيح إداري مسجل.</p><label>العامل<select id="employee" required></select></label><label>التوقيت المحلي<input type="datetime-local" id="timestamp" step="1" required></label><label>نوع الحركة<select id="kind"><option value="in">دخول</option><option value="out">خروج</option><option value="other">غير محدد</option></select></label><label>سبب التصحيح<input id="reason" minlength="5" maxlength="500" required placeholder="اذكر السبب بوضوح"></label><div class="row"><button type="submit">حفظ التصحيح</button><button type="button" id="cancel">إلغاء</button></div><div id="editStatus" class="muted"></div></form></dialog>
 <script>
-const $=id=>document.getElementById(id), names={in:'حضور',out:'انصراف',other:'غير محدد'}, movements={attendance:'حضور',departure:'انصراف',permission_exit:'استعذار — خروج مؤقت',permission_return:'استعذار — عودة',review:'بحاجة إلى مراجعة'};
+const $=id=>document.getElementById(id), names={in:'حضور',out:'انصراف',other:'غير محدد'}, movements={attendance:'حضور',departure:'انصراف',permission_exit:'استعذار — خروج مؤقت',permission_return:'استعذار — عودة',review:'حركة غير محددة'};
 let selected=new Set(),manual=[],employees=[],current=null;
 const focusParams=new URLSearchParams(location.search);let focusFingerprint=focusParams.get('fingerprint');const focusDate=focusParams.get('date');if(/^\d{4}-\d{2}-\d{2}$/.test(focusDate||''))$('deviceDate').value=focusDate;
 async function api(url,opts){const r=await fetch(url,{credentials:'same-origin',cache:'no-store',...opts});let data;try{data=await r.json()}catch{throw Error('استجابة غير صالحة من الخادم')};if(!r.ok)throw Error(data.error||'فشل الطلب');return data}
 function status(id,msg,bad=false){$(id).textContent=msg;$(id).className='status'+(bad?' error':'')}
 function cell(tr,value){const td=document.createElement('td');td.textContent=value==null?'':String(value);tr.append(td);return td}
-function movementCell(tr,item){const td=cell(tr,'');const tag=document.createElement('span');tag.className='movement-tag '+(item.movement_type||'review');tag.textContent=(movements[item.movement_type]||'بحاجة إلى مراجعة')+(item.movement_type==='permission_return'?' ('+Number(item.permission_minutes||0)+' دقيقة)':'');td.append(tag)}
+function movementCell(tr,item){
+ const td=cell(tr,''),tag=document.createElement('span');
+ const reason=String(item.review_reason||'');
+ tag.className='movement-tag '+(item.movement_type||'review');
+ tag.textContent=item.movement_type==='review'?
+   (item.kind==='other'?'حركة غير محددة':
+    reason.includes('دخول مكرر')?'دخول مكرر':
+    reason.includes('خروج مكرر')?'انصراف مكرر':
+    reason.includes('خروج دون حضور')?'انصراف دون حضور':
+    reason.includes('عودة')?'عودة غير مؤكدة':'تسلسل غير مكتمل'):
+   (movements[item.movement_type]||'حركة غير محددة')+(item.movement_type==='permission_return'?' ('+Number(item.permission_minutes||0)+' دقيقة)':'');
+ if(item.movement_type==='review')tag.title=reason||'تسلسل الحركة غير مكتمل';
+ td.append(tag);
+}
 function selectedUpdate(){$('selectedCount').textContent='المحدد: '+selected.size;$('deleteSelected').disabled=!selected.size}
 async function loadManual(){selected.clear();manual=[];$('manualRows').replaceChildren();selectedUpdate();status('manualStatus','جاري قراءة الحركات...');
 try{const d=await api('/api/manual-punch-cleanup?date='+encodeURIComponent($('created').value));manual=d.items||[];for(const item of manual){const tr=document.createElement('tr'),td=document.createElement('td'),cb=document.createElement('input');cb.type='checkbox';cb.addEventListener('change',()=>{if(cb.checked)selected.add(item.id);else selected.delete(item.id);selectedUpdate()});td.append(cb);tr.append(td);cell(tr,item.employee_name||item.employee_id);cell(tr,item.timestamp);cell(tr,names[item.kind]||item.kind);$('manualRows').append(tr)}status('manualStatus','حركات يدوية مدخلة في هذا اليوم: '+manual.length+'. راجع كل حركة قبل اختيارها.')}catch(e){status('manualStatus',e.message,true)}}

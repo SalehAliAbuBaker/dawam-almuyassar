@@ -15,7 +15,7 @@ if (!(Test-Path -LiteralPath $keyFile)) {
 }
 # Verify Windows DPAPI can decrypt under THIS account; do not print the token.
 $secure = Get-Content -LiteralPath $keyFile -Raw | ConvertTo-SecureString
-$credential = New-Object System.Management.Automation.PSCredential('MB10', $secure)
+$credential = [System.Management.Automation.PSCredential]::new('MB10', $secure)
 if ($credential.GetNetworkCredential().Password.Length -lt 32) {
     throw 'The local MB10 token is invalid.'
 }
@@ -61,7 +61,7 @@ try {
     }
     Write-SyncLog 'MB10 Windows task started.'
     $secure = Get-Content -LiteralPath $keyFile -Raw | ConvertTo-SecureString
-    $credential = New-Object System.Management.Automation.PSCredential('MB10', $secure)
+    $credential = [System.Management.Automation.PSCredential]::new('MB10', $secure)
     $env:MB10_IMPORT_TOKEN = $credential.GetNetworkCredential().Password
     Remove-Variable credential, secure
     if ($env:MB10_IMPORT_TOKEN.Length -lt 32) {

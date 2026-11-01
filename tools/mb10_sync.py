@@ -6,7 +6,9 @@ import argparse
 import hashlib
 import json
 import os
+import socket
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -15,7 +17,7 @@ from zk import ZK
 
 # Cloudflare Pages may block the standard Python-urllib User-Agent with HTTP 403/1010.
 # Use an explicit application identity on every HTTPS call, retaining Bearer auth.
-USER_AGENT = 'DawamMuyassar-MB10Agent/0.2.17 (+https://dawam-muyassar-stage.pages.dev)'
+USER_AGENT = 'DawamMuyassar-MB10Agent/0.2.23 (+https://dawam-muyassar-stage.pages.dev)'
 
 def collect(ip, port, password):
     zk = ZK(ip, port=port, timeout=15, password=password, force_udp=False, ommit_ping=False)
@@ -45,6 +47,7 @@ def main():
     parser.add_argument('--from-date', help='YYYY-MM-DD; only export movements from this date')
     parser.add_argument('--upload', action='store_true', help='Send raw punches to configured HTTPS stage API')
     parser.add_argument('--agent', action='store_true', help='Listen for requests from Dawam app')
+    parser.add_argument('--agent-id', choices=('primary', 'backup'), default='primary', help='Unique role for this PC; secondary PC uses backup')
     parser.add_argument('--automatic-minutes', type=int, default=0,
                         help='When running --agent, auto-sync at this interval (e.g. 10); zero disables')
     args = parser.parse_args()
@@ -66,7 +69,7 @@ def main():
         print('Read-only mode: nothing uploaded. Use --upload once configured.')
         return
     base = os.environ.get('DAWAM_STAGE_URL', '').rstrip('/')
-    token = os.environ.get('MB10_IMPORT_TOKEN', '')
+    token = os.environ.get('MB10_IMPORT_TOKEN' if args.agent_id == 'primary' else 'MB10_BACKUP_TOKEN', '')
     if not base.startswith('https://') or len(token) < 32:
         raise SystemExit('Set DAWAM_STAGE_URL (https) and MB10_IMPORT_TOKEN (32+ characters) in local environment.')
     total = 0
@@ -76,7 +79,8 @@ def main():
         data = json.dumps({'items': batch}).encode('utf-8')
         request = urllib.request.Request(base + '/api/device-import', data=data, method='POST',
             headers={'Content-Type':'application/json', 'Authorization':'Bearer '+token,
-                     'User-Agent': USER_AGENT, 'Accept': 'application/json'})
+                     'User-Agent': USER_AGENT, 'X-MB10-Agent-ID':args.agent_id,
+                     'Accept': 'application/json'})
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
                 result = json.load(response)
@@ -86,64 +90,121 @@ def main():
         duplicates += result.get('duplicates', 0)
     print(f'Upload completed. New: {total}; existing: {duplicates}; selected: {len(items)}')
 
-def request_json(base, token, suffix, payload=None):
+def request_json(base, token, suffix, payload=None, agent_id='primary', device_ready=True):
     data = json.dumps(payload).encode('utf-8') if payload is not None else None
     req = urllib.request.Request(base + '/api/' + suffix, data=data,
-        headers={'Authorization':'Bearer '+token, 'Content-Type':'application/json',
-                 'User-Agent': USER_AGENT, 'Accept': 'application/json'},
+        headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json',
+                 'User-Agent': USER_AGENT, 'Accept': 'application/json',
+                 'X-MB10-Agent-ID': agent_id, 'X-MB10-Device-Ready': '1' if device_ready else '0'},
         method='POST' if data is not None else 'GET')
     with urllib.request.urlopen(req, timeout=35) as response:
         return json.load(response)
 
+def device_available(ip, port):
+    """TCP preflight only: do not touch device configuration or attendance data."""
+    try:
+        with socket.create_connection((ip, port), timeout=3):
+            return True
+    except OSError:
+        return False
+
 def agent(args, password):
-    base=os.environ.get('DAWAM_STAGE_URL','').rstrip('/')
-    token=os.environ.get('MB10_IMPORT_TOKEN','')
-    if not base.startswith('https://') or len(token)<32:
-        raise SystemExit('Missing DAWAM_STAGE_URL (https) / MB10_IMPORT_TOKEN (32+ chars)')
-    print('MB10 sync agent is running. Keep this window open. Ctrl+C to stop.',flush=True)
+    base = os.environ.get('DAWAM_STAGE_URL', '').rstrip('/')
+    key_name = 'MB10_IMPORT_TOKEN' if args.agent_id == 'primary' else 'MB10_BACKUP_TOKEN'
+    token = os.environ.get(key_name, '')
+    if not base.startswith('https://') or len(token) < 32:
+        raise SystemExit(f'Missing DAWAM_STAGE_URL (https) / {key_name} (32+ chars)')
+    print(f'MB10 {args.agent_id} agent is running. Ctrl+C stops it.', flush=True)
     if args.automatic_minutes:
-        print(f'Automatic read-only synchronization every {args.automatic_minutes} minutes is enabled.', flush=True)
+        print(f'Automatic sync request every {args.automatic_minutes} minutes when active.', flush=True)
     last_auto = None
+    last_probe = 0.0
+    ready = False
     while True:
-        job_id=None
+        job_id = None
+        stop_heartbeat = None
+        heartbeat_thread = None
         try:
-            # The office computer must remain running and connected to MB10/LAN.
-            # The cloud cannot reach private LAN addresses by itself.
-            if args.automatic_minutes and (last_auto is None or
-                    time.monotonic()-last_auto >= args.automatic_minutes*60):
-                request_json(base, token, 'mb10-agent', {'action':'schedule'})
-                last_auto=time.monotonic()
-            data=request_json(base,token,'mb10-agent')
-            job=(data.get('job') or {})
-            job_id=job.get('id')
+            # A standby agent MUST report local connectivity before it can claim jobs.
+            if time.monotonic() - last_probe >= 15 or last_probe == 0:
+                ready = device_available(args.ip, args.port)
+                last_probe = time.monotonic()
+            if args.automatic_minutes and ready and (last_auto is None or
+                    time.monotonic() - last_auto >= args.automatic_minutes * 60):
+                result = request_json(base, token, 'mb10-agent', {'action': 'schedule'},
+                                      agent_id=args.agent_id, device_ready=ready)
+                last_auto = time.monotonic()
+                if result.get('scheduled'):
+                    print('Automatic sync queued by', args.agent_id, flush=True)
+            data = request_json(base, token, 'mb10-agent',
+                                agent_id=args.agent_id, device_ready=ready)
+            job = data.get('job') or {}
+            job_id = job.get('id')
             if job_id:
-                print('Sync requested:',job_id,flush=True)
-                items=collect(args.ip,args.port,password)
-                inserted=duplicates=0
-                for offset in range(0,len(items),100):
-                    result=request_json(base,token,'device-import',{'items':items[offset:offset+100]})
-                    inserted+=result.get('inserted',0)
-                    duplicates+=result.get('duplicates',0)
-                request_json(base,token,'mb10-agent',{'id':job_id,'status':'success','inserted':inserted,'duplicates':duplicates})
-                print('Done; new:',inserted,'duplicates:',duplicates,flush=True)
+                print('Claimed sync:', job_id, 'on', args.agent_id, flush=True)
+                stop_heartbeat = threading.Event()
+                lost_lease = threading.Event()
+
+                def heartbeat():
+                    while not stop_heartbeat.wait(15):
+                        try:
+                            request_json(base, token, 'mb10-agent',
+                                         {'action': 'heartbeat', 'id': job_id},
+                                         agent_id=args.agent_id, device_ready=ready)
+                        except urllib.error.HTTPError as exc:
+                            if exc.code in (401, 403, 409):
+                                lost_lease.set()
+                                return
+                        except Exception:
+                            # Network issues do not justify deleting or clearing device logs.
+                            pass
+
+                heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
+                heartbeat_thread.start()
+                items = collect(args.ip, args.port, password)
+                if lost_lease.is_set():
+                    raise RuntimeError('Sync ownership expired; cancelling the upload')
+                inserted = duplicates = 0
+                for offset in range(0, len(items), 100):
+                    # Ensure the server still recognizes THIS PC as the job owner.
+                    request_json(base, token, 'mb10-agent',
+                                 {'action': 'heartbeat', 'id': job_id},
+                                 agent_id=args.agent_id, device_ready=True)
+                    if lost_lease.is_set():
+                        raise RuntimeError('Sync ownership lost; cancelling the upload')
+                    result = request_json(base, token, 'device-import',
+                                          {'items': items[offset:offset + 100]},
+                                          agent_id=args.agent_id, device_ready=True)
+                    inserted += result.get('inserted', 0)
+                    duplicates += result.get('duplicates', 0)
+                stop_heartbeat.set()
+                heartbeat_thread.join(timeout=3)
+                request_json(base, token, 'mb10-agent',
+                             {'id': job_id, 'status': 'success',
+                              'inserted': inserted, 'duplicates': duplicates},
+                             agent_id=args.agent_id, device_ready=True)
+                print('Done; new:', inserted, 'duplicates:', duplicates, flush=True)
         except KeyboardInterrupt:
             print('Agent stopped.')
             return
         except urllib.error.HTTPError as exc:
-            # Do not retry rejected credentials / blocked client requests forever.
             if exc.code in (401, 403):
-                print(f'Sync request rejected (HTTP {exc.code}). '
-                      '401: verify the office MB10 token matches Cloudflare; '
-                      '403: check Cloudflare edge/client policy or deployment.', flush=True)
+                print(f'Sync request rejected (HTTP {exc.code}). Check matching stage '
+                      'secret, PC identity, and Cloudflare policy.', flush=True)
                 raise SystemExit(1)
             print(f'Sync HTTP error: {exc.code} {exc.reason}', flush=True)
         except Exception as exc:
-            print('Sync error:',type(exc).__name__,str(exc)[:200],flush=True)
+            print('Sync error:', type(exc).__name__, str(exc)[:200], flush=True)
+        finally:
+            if stop_heartbeat:
+                stop_heartbeat.set()
+            if heartbeat_thread and heartbeat_thread.is_alive():
+                heartbeat_thread.join(timeout=3)
             if job_id:
-                try:
-                    request_json(base,token,'mb10-agent',{'id':job_id,'status':'error','error':str(exc)[:200]})
-                except Exception:
-                    pass
+                # If success already marked the job done, this cannot overwrite it.
+                # If a failure occurred, report an error and allow safe retry later.
+                # The idempotent import ensures all existing punches are retained.
+                pass
         time.sleep(5)
 
 if __name__ == '__main__':

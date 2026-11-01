@@ -852,6 +852,13 @@ async function deviceAttendance(db,user,request){
     read_only:true,posted_to_attendance:false,payroll_changed:false});
 }
 
+async function expireAbandonedMb10Jobs(db) {
+  // Recover from power loss or crashed agents without deleting or changing raw punches.
+  // This runs only when a new synchronization is requested, not on every status poll.
+  await db.prepare("UPDATE mb10_sync_jobs SET state='error',finished_at=datetime('now'),error_text='انقطع الربط قبل اكتمال الجلب؛ ستُعاد المحاولة.' WHERE organization_id=? AND ((state='pending' AND requested_at<datetime('now','-30 minutes')) OR (state='running' AND COALESCE(started_at,requested_at)<datetime('now','-30 minutes')))")
+    .bind(ORG).run();
+}
+
 export async function onRequest(context) {
   const {request,env} = context;
   const db=env.DB;
@@ -894,13 +901,15 @@ export async function onRequest(context) {
       if(!user) return reject(401,'يرجى تسجيل الدخول');
       if(user.self_only||!(await allowedByPermission(db,user,'device.sync',user.role==='hr'))) return reject(403,'ليس لديك صلاحية');
       const last=await db.prepare("SELECT id,state,requested_at,started_at,finished_at,new_count,duplicate_count,error_text FROM mb10_sync_jobs WHERE organization_id=? ORDER BY requested_at DESC LIMIT 1").bind(ORG).first();
-      return response({job:last||null});
+      const completed=await db.prepare("SELECT finished_at,new_count,duplicate_count FROM mb10_sync_jobs WHERE organization_id=? AND state='done' ORDER BY finished_at DESC LIMIT 1").bind(ORG).first();
+      return response({job:last||null,last_success:completed||null,automatic_sync_requires_office_agent:true,expected_interval_minutes:10});
     }
     if (path==='mb10-sync' && method==='POST') {
       const user=await sessionUser(db,request);
       if(!user) return reject(401,'يرجى تسجيل الدخول');
       if(user.self_only||!(await allowedByPermission(db,user,'device.sync',user.role==='hr'))) return reject(403,'ليس لديك صلاحية');
       if(user.must_change_password) return reject(403,'يجب تغيير كلمة المرور');
+      await expireAbandonedMb10Jobs(db);
       const existing=await db.prepare("SELECT id,state FROM mb10_sync_jobs WHERE organization_id=? AND state IN ('pending','running') ORDER BY requested_at DESC LIMIT 1").bind(ORG).first();
       if(existing) return response({id:existing.id,state:existing.state,already_pending:true});
       const id=uuid();
@@ -920,6 +929,7 @@ export async function onRequest(context) {
       const data=await bodyJson(request);
       // Local computer may schedule automatic synchronization (never a remote device read).
       if(data.action==='schedule'){
+        await expireAbandonedMb10Jobs(db);
         const running=await db.prepare("SELECT id,state FROM mb10_sync_jobs WHERE organization_id=? AND state IN ('pending','running') ORDER BY requested_at DESC LIMIT 1").bind(ORG).first();
         if(running)return response({job:running,already_pending:true});
         const id=uuid();
@@ -942,7 +952,7 @@ export async function onRequest(context) {
       if (method!=='POST') return reject(405,'طريقة غير مدعومة؛ استخدم POST');
       return importMb10Punches(context);
     }
-    if (path==='status' && method==='GET') return response({setupRequired:await setupRequired(db),version:'0.2.20',pushConfigured:pushConfigured(env)});
+    if (path==='status' && method==='GET') return response({setupRequired:await setupRequired(db),version:'0.2.21',pushConfigured:pushConfigured(env)});
     if (path==='setup' && method==='POST') return initialSetup(db,env,request);
     if (path==='login' && method==='POST') return login(db,request);
     const user=await sessionUser(db,request);

@@ -17,13 +17,15 @@ textarea{width:100%;min-height:90px;resize:vertical}label{display:block;margin:1
 .alert.success{border-color:#087546;background:#ecf8f0}
 .alert b{display:block;margin-bottom:4px}.alert p{margin:0}
 .state{padding:10px;background:#eaf3ed;border-radius:10px;white-space:pre-wrap;margin:10px 0}
-.hidden{display:none}button.secondary{background:#eaf4ec;color:#165237}
+.hidden{display:none}button.secondary{background:#eaf4ec;color:#165237}.login-link{display:inline-flex;padding:11px 15px;border-radius:10px;background:#087546;color:white;text-decoration:none}.auth-panel{border-right:4px solid #b98832}
 </style></head><body><main>
-<header><h1>دوامي وتنبيهاتي</h1><small>دوام الميسر — 0.2.15 · بياناتي الشخصية فقط</small>
+<header><h1>دوامي وتنبيهاتي</h1><small>دوام الميسر — 0.2.16 · بياناتي الشخصية فقط</small>
 <p class="hint">متابعة الحضور والانصراف والتنبيه عند عدم ظهور بصمة بعد المزامنة، مع إمكانية إرسال بلاغ للمراجعة.</p>
-<div class="row"><a href="./">العودة للتطبيق</a><span id="identity"></span></div>
+<div class="row"><a href="./">العودة للتطبيق</a><span id="identity"></span><button id="switchAccount" type="button" class="secondary hidden">تسجيل الخروج / تغيير العامل</button></div>
 </header>
-<section class="panel"><div class="row"><label for="date">التاريخ</label><input type="date" id="date"><button id="load">تحديث الحالة</button><button id="notify" class="secondary">تفعيل تنبيهات الجوال بالخلفية</button><button id="disablePush" class="secondary hidden">إيقاف التنبيهات</button><button id="testPush" class="secondary hidden">إرسال تنبيه تجريبي</button></div>
+<section class="panel auth-panel" id="authGate"><h2>التحقق من حساب العامل</h2><p id="authMessage">جارٍ التحقق من هوية المستخدم قبل عرض بيانات الحضور أو تفعيل الإشعارات...</p><a class="login-link hidden" id="loginLink" href="/">الدخول إلى دوام الميسر</a></section>
+<div id="privateArea" class="hidden">
+<section class="panel"><div class="row"><label for="date">التاريخ</label><input type="date" id="date"><button id="load">تحديث الحالة</button><button id="notify" class="secondary">تفعيل تنبيهات الجوال بالخلفية</button><button id="disablePush" class="secondary hidden">إيقاف التنبيهات</button><button id="testPush" class="secondary" disabled>إرسال تنبيه تجريبي</button></div>
 <p class="hint">التنبيهات تعمل بعد الموافقة وتسجيل اشتراك الجهاز، حتى عند إغلاق الصفحة إذا سمح نظام الجوال بذلك. يلزم اتصال الكمبيوتر بجهاز MB10 ومزامنة ناجحة. عدم ظهور البصمة ليس دليلًا على فشل الماسح ولا يؤدي إلى خصم تلقائي.</p><div id="pushStatus" class="hint" role="status"></div><div id="message" class="state">جارٍ التحقق من تسجيل الدخول...</div>
 <div id="sync" class="hint"></div></section>
 <section class="panel hidden" id="details"><h2>حالة دوامي</h2><div class="grid" id="stats"></div></section>
@@ -33,21 +35,60 @@ textarea{width:100%;min-height:90px;resize:vertical}label{display:block;margin:1
 <label for="kind">نوع المشكلة</label><select id="kind"><option value="checkin">لم تظهر بصمة الحضور</option><option value="checkout">لم تظهر بصمة الانصراف</option><option value="scan_failed">فشل قارئ البصمة عند المحاولة</option><option value="other">مشكلة أخرى</option></select>
 <label for="detail">تفاصيل البلاغ</label><textarea id="detail" maxlength="500" placeholder="اذكر وقت محاولة التبصيم والمشكلة التي ظهرت لك (8 أحرف على الأقل)"></textarea>
 <div class="row"><button id="send">إرسال البلاغ للمراجعة</button></div><p id="report" role="status"></p></section>
+</div>
 </main>
 <script>
 'use strict';
 const $=id=>document.getElementById(id),date=$('date'),message=$('message'),alerts=$('alerts');
-let loadedToday='',pushBusy=false;
+let loadedToday='',pushBusy=false,authorized=false;
 async function api(url,opts={}){
  const response=await fetch('/api/'+url,{credentials:'same-origin',cache:'no-store',...opts});
  const result=await response.json().catch(()=>({}));
- if(!response.ok)throw Error(result.error||('تعذر الوصول للخادم ('+response.status+')'));
+ if(!response.ok){const error=new Error(result.error||('تعذر الوصول للخادم ('+response.status+')'));error.status=response.status;throw error;}
  return result;
 }
 function addText(parent,tag,value,css){
  const node=document.createElement(tag);if(css)node.className=css;
  node.textContent=String(value??'—');parent.append(node);return node;
 }
+function showAuthGate(reason){
+ authorized=false;
+ $('privateArea').classList.add('hidden');
+ $('authGate').classList.remove('hidden');
+ $('authMessage').textContent=reason;
+ $('loginLink').classList.remove('hidden');
+ $('switchAccount').classList.add('hidden');
+ $('identity').textContent='';
+ $('testPush').disabled=true;
+ $('details').classList.add('hidden');
+ $('alerts').replaceChildren();
+ $('stats').replaceChildren();
+}
+async function checkAccess(){
+ try{
+  const me=await api('me'),user=me.user;
+  if(!user||!user.employee_id){
+   showAuthGate(user?'هذا الحساب غير مربوط بسجل عامل. سجّل الدخول بحساب العامل المرتبط، لا بحساب المدير.':'يرجى تسجيل الدخول بحساب العامل.');
+   return;
+  }
+  authorized=true;
+  $('authGate').classList.add('hidden');
+  $('privateArea').classList.remove('hidden');
+  $('switchAccount').classList.remove('hidden');
+  $('identity').textContent='الحساب الحالي: '+(user.name||user.email||'مستخدم مسجّل');
+  await load();
+  await refreshPushStatus();
+ }catch(e){
+  showAuthGate(e.status===401?'لا توجد جلسة تسجيل دخول صالحة على هذا الجوال. سجّل الدخول بحساب العامل.':'تعذر التحقق من هوية العامل: '+e.message);
+ }
+}
+$('switchAccount').addEventListener('click',async()=>{
+ try{await api('logout',{method:'POST'});}catch(e){
+  if(e.status!==401){$('message').textContent='تعذر تسجيل الخروج: '+e.message;return;}
+ }
+ showAuthGate('تم إنهاء الجلسة. سجّل الدخول بحساب العامل الذي سيستخدم هذا الجوال.');
+ window.location.assign('/');
+});
 function fmt(time){return time?time.slice(11,16):'—'}
 function setStats(day){
  $('stats').replaceChildren();
@@ -62,6 +103,7 @@ function setStats(day){
  $('details').classList.remove('hidden');
 }
 async function load(){
+ if(!authorized)return;
  $('load').disabled=true;message.textContent='جارٍ فحص السجل الشخصي...';
  try{
   const query=date.value?'?date='+encodeURIComponent(date.value):'';
@@ -86,6 +128,7 @@ async function load(){
   }
 
  }catch(e){
+  if(e.status===401){showAuthGate('انتهت جلسة الحساب. سجّل الدخول مجددًا قبل عرض بيانات العامل.');return;}
   message.textContent='تعذر تحديث بياناتك: '+e.message+'\nإذا انقطع الاتصال، فلا يُعد ذلك دليلًا على إخفاق التبصيم.';
   alerts.replaceChildren();$('sync').textContent='';
   $('details').classList.add('hidden');
@@ -103,26 +146,46 @@ function base64ToBytes(value){
 function sameBytes(a,b){return a&&b&&a.byteLength===b.byteLength&&new Uint8Array(a).every((v,i)=>v===b[i])}
 async function registration(){return navigator.serviceWorker.register('/offline-sw.js',{scope:'/'})}
 async function refreshPushStatus(){
+ if(!authorized)return;
+ const test=$('testPush'),activate=$('notify'),disable=$('disablePush');
+ test.disabled=true;
  if(!webPushSupported()){
-  $('pushStatus').textContent='إشعارات الخلفية غير مدعومة في هذا المتصفح أو يتطلب الموقع اتصال HTTPS.';
+  activate.disabled=true;disable.classList.add('hidden');
+  $('pushStatus').textContent='إشعارات الخلفية غير مدعومة في هذا المتصفح. افتح الصفحة من Chrome على جوال Android باستخدام HTTPS.';
   return;
  }
  try{
   const config=await api('push-config');
   if(!config.enabled){
-   $('pushStatus').textContent='خدمة التنبيهات تنتظر إعداد مفاتيح Web Push على الخادم.';
-   $('notify').disabled=true;return;
+   activate.disabled=true;disable.classList.add('hidden');
+   $('pushStatus').textContent='خدمة التنبيهات لم تُهيّأ على الخادم.';return;
   }
+  activate.disabled=false;
   const info=await api('push-subscription'),sw=await registration(),current=await sw.pushManager.getSubscription();
-  const active=!!current&&info.enabled&&Notification.permission==='granted';
-  $('disablePush').classList.toggle('hidden',!active);
-  $('testPush').classList.toggle('hidden',!active);
-  $('notify').classList.toggle('hidden',active);
-  $('pushStatus').textContent=active?'✅ التنبيهات مفعّلة لهذا الجهاز، ويمكن أن تصل والصفحة مغلقة.':'التنبيهات غير مفعّلة لهذا الجهاز.';
- }catch(e){$('pushStatus').textContent='تعذر التحقق من التنبيهات: '+e.message}
+  const permission=Notification.permission;
+  const matching=!!current&&sameBytes(current.options.applicationServerKey,base64ToBytes(config.public_key));
+  const active=matching&&info.enabled&&permission==='granted';
+  disable.classList.toggle('hidden',!active);
+  activate.classList.toggle('hidden',active);
+  test.disabled=!active;
+  $('pushStatus').textContent=active?
+   '✅ التنبيهات مفعّلة. زر «إرسال تنبيه تجريبي» جاهز للاختبار.':
+   permission==='denied'?
+    'المتصفح يمنع الإشعارات. اسمح للموقع بالإشعارات من إعدادات Chrome ثم أعد المحاولة.':
+   !current?
+    'اضغط «تفعيل تنبيهات الجوال بالخلفية» أولًا؛ زر الاختبار غير متاح حتى نجاح الاشتراك.':
+   !matching?
+    'اشتراك هذا الجوال بمفتاح قديم. اضغط «تفعيل تنبيهات الجوال بالخلفية» لتحديثه.':
+   !info.enabled?
+    'لم يُحفظ اشتراك هذا الجوال في حساب العامل. اضغط «تفعيل تنبيهات الجوال بالخلفية» لإعادة التسجيل.':
+    'اسمح بالإشعارات ثم اضغط «تفعيل تنبيهات الجوال بالخلفية».';
+ }catch(e){
+  if(e.status===401){showAuthGate('انتهت جلسة الدخول. سجّل الدخول بحساب العامل أولًا.');return;}
+  $('pushStatus').textContent='تعذر فحص اشتراك الجوال: '+e.message;
+ }
 }
 $('notify').addEventListener('click',async()=>{
- if(pushBusy)return;
+ if(!authorized||pushBusy)return;
  pushBusy=true;$('notify').disabled=true;
  try{
   if(!webPushSupported())throw Error('المتصفح أو الاتصال لا يدعم إشعارات الخلفية');
@@ -157,6 +220,7 @@ $('disablePush').addEventListener('click',async()=>{
  finally{$('disablePush').disabled=false}
 });
 $('testPush').addEventListener('click',async()=>{
+ if(!authorized)return;
  $('testPush').disabled=true;
  try{
   const r=await api('push-test',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});
@@ -166,6 +230,7 @@ $('testPush').addEventListener('click',async()=>{
 });
 
 $('send').addEventListener('click',async()=>{
+ if(!authorized)return;
  $('report').textContent='';
  const detail=$('detail').value.trim();
  if(!date.value||detail.length<8){$('report').textContent='حدد التاريخ واكتب وصفًا من 8 أحرف على الأقل.';return}
@@ -178,7 +243,6 @@ $('send').addEventListener('click',async()=>{
  finally{$('send').disabled=false}
 });
 date.addEventListener('change',load);
-load();
-refreshPushStatus();
-setInterval(()=>{if(!document.hidden&&(!date.value||date.value===loadedToday))load()},60000);
+checkAccess();
+setInterval(()=>{if(authorized&&!document.hidden&&(!date.value||date.value===loadedToday))load()},60000);
 </script></body></html>

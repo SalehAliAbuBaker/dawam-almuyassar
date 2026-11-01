@@ -215,28 +215,81 @@ async function createUser(db, actor, request) {
   return response({ user:{id,name,email,role:b.role,employee_id:employeeId,must_change_password:1} },201);
 }
 async function updateUser(db, actor, id, request) {
-  const b=await bodyJson(request), target=await db.prepare('SELECT * FROM users WHERE id=? AND organization_id=?').bind(id,ORG).first();
+  const b=await bodyJson(request);
+  if(!b || typeof b!=='object' || Array.isArray(b))return reject(400,'بيانات الحساب غير صالحة');
+  const target=await db.prepare('SELECT * FROM users WHERE id=? AND organization_id=?').bind(id,ORG).first();
   if (!target) return reject(404,'المستخدم غير موجود');
+  if(b.name!==undefined && typeof b.name!=='string')return reject(400,'اسم الحساب غير صالح');
+  if(b.email!==undefined && typeof b.email!=='string')return reject(400,'البريد الإلكتروني غير صالح');
+  if(b.is_active!==undefined && ![true,false,0,1].includes(b.is_active))return reject(400,'حالة الحساب غير صالحة');
+  const name=b.name===undefined?target.name:str(b.name,120);
+  const email=b.email===undefined?target.email:emailVal(b.email);
+  if(name.length<2||!validEmail(email))return reject(400,'راجع اسم المستخدم والبريد الإلكتروني');
   const role=b.role===undefined?target.role:b.role;
   if (!ROLES.has(role)) return reject(400,'دور غير صالح');
   const active=b.is_active===undefined?target.is_active:(b.is_active?1:0);
-  if (target.id===actor.id && (!active||role!=='admin')) return reject(400,'لا يمكن تعطيل أو تخفيض صلاحيات حسابك');
-  const employeeId=b.employee_id===undefined?target.employee_id:(b.employee_id||null);
-  if (employeeId && !(await db.prepare('SELECT id FROM employees WHERE id=? AND organization_id=?').bind(employeeId,ORG).first())) return reject(400,'العامل غير موجود');
-  const department=b.department_scope===undefined?target.department_scope:(str(b.department_scope,100)||null);
-  if (role==='viewer'&&!employeeId) return reject(400,'المستخدم المقيد يحتاج ربطًا بعامل');
-  if (role==='supervisor'&&!department) return reject(400,'المشرف يحتاج قسمًا');
-  await db.prepare("UPDATE users SET role=?,is_active=?,employee_id=?,department_scope=?,updated_at=datetime('now') WHERE id=? AND organization_id=?")
-    .bind(role,active,employeeId,department,id,ORG).run();
-  if (!active || role!==target.role || employeeId!==target.employee_id || department!==target.department_scope) {
-    await db.prepare('DELETE FROM sessions WHERE user_id=?').bind(id).run();
-    if(!active || employeeId!==target.employee_id){
-      await ensurePushStorage(db);
-      await db.prepare('DELETE FROM push_subscriptions WHERE organization_id=? AND user_id=?').bind(ORG,id).run();
-    }
+  if (target.id===actor.id && (!active||role!=='admin')) return reject(400,'لا يمكن تعطيل حسابك الإداري أو تخفيض دوره');
+  if(target.role==='admin' && target.is_active===1 && (!active||role!=='admin')){
+    const admins=await db.prepare("SELECT COUNT(*) AS n FROM users WHERE organization_id=? AND role='admin' AND is_active=1").bind(ORG).first();
+    if(Number(admins?.n||0)<=1)return reject(409,'لا يمكن تعطيل آخر حساب مدير نشط أو تغيير دوره');
   }
-  await audit(db,actor,'user.updated','user',id,{role,active});
-  return response({ok:true});
+  if(b.employee_id!==undefined && b.employee_id!==null && typeof b.employee_id!=='string')return reject(400,'معرف العامل غير صالح');
+  const employeeId=b.employee_id===undefined?target.employee_id:(str(b.employee_id,80)||null);
+  if (employeeId && !(await db.prepare('SELECT id FROM employees WHERE id=? AND organization_id=?').bind(employeeId,ORG).first())) return reject(400,'العامل غير موجود');
+  if(b.department_scope!==undefined && b.department_scope!==null && typeof b.department_scope!=='string')return reject(400,'القسم غير صالح');
+  const department=b.department_scope===undefined?target.department_scope:(str(b.department_scope,100)||null);
+  if (role==='viewer'&&!employeeId) return reject(400,'حساب الاطلاع الشخصي يتطلب ربط عامل');
+  if (role==='supervisor'&&!department) return reject(400,'المشرف يحتاج تحديد القسم');
+  const changedFields=['name','email','role','is_active','employee_id','department_scope'].filter(key=>{
+    const next={name,email,role,is_active:active,employee_id:employeeId,department_scope:department}[key];
+    return (target[key]??null)!==(next??null);
+  });
+  if(!changedFields.length)return response({ok:true,changed:false});
+  try{
+    await db.prepare("UPDATE users SET name=?,email=?,role=?,is_active=?,employee_id=?,department_scope=?,updated_at=datetime('now') WHERE id=? AND organization_id=?")
+      .bind(name,email,role,active,employeeId,department,id,ORG).run();
+  }catch(e){if(/UNIQUE constraint failed/i.test(String(e?.message||'')))return reject(409,'البريد مستخدم أو العامل مربوط بحساب آخر');throw e;}
+  // Invalidate old authorization whenever login identity, role, state or data scope changes.
+  const invalidate=['email','role','is_active','employee_id','department_scope'].some(key=>changedFields.includes(key));
+  if(invalidate)await db.prepare('DELETE FROM sessions WHERE user_id=?').bind(id).run();
+  if(!active||employeeId!==target.employee_id){
+    await ensurePushStorage(db);
+    await db.prepare('DELETE FROM push_subscriptions WHERE organization_id=? AND user_id=?').bind(ORG,id).run();
+  }
+  await audit(db,actor,'user.updated','user',id,{changed_fields:changedFields,role_before:target.role,role_after:role,active_before:!!target.is_active,active_after:!!active});
+  return response({ok:true,changed:true,reauth_required:invalidate && id===actor.id,user:{id,name,email,role,is_active:active,employee_id:employeeId,department_scope:department}});
+}
+
+/* Administrative password reset: administrator proves knowledge of own password.
+   Never read back an existing password, never store plaintext or send it in audit. */
+async function adminResetUserPassword(db,actor,id,request){
+  if(id===actor.id)return reject(400,'لتغيير كلمة مرور المدير استخدم تغيير كلمة مروري مع كتابة الكلمة القديمة');
+  const target=await db.prepare('SELECT id,role,is_active FROM users WHERE id=? AND organization_id=?').bind(id,ORG).first();
+  if(!target)return reject(404,'المستخدم غير موجود');
+  const b=await bodyJson(request);
+  if(!b||typeof b!=='object'||Array.isArray(b)||!validPassword(b.new_password)||typeof b.admin_password!=='string')
+    return reject(400,'أدخل كلمة مرور جديدة من 12 إلى 128 حرفًا وكلمة مرور المدير الحالية');
+  const bucket=await hashText('admin-password-reset|'+actor.id);
+  const previous=await db.prepare('SELECT attempts,locked_until,updated_at FROM login_attempts WHERE bucket=?').bind(bucket).first();
+  if(previous?.locked_until&&previous.locked_until>iso())return reject(429,'محاولات تأكيد كثيرة؛ حاول بعد 15 دقيقة');
+  const correct=safeEquals(await passwordHash(b.admin_password,actor.password_salt,actor.password_iterations),actor.password_hash);
+  if(!correct){
+    const stale=!previous?.updated_at||Date.now()-Date.parse(previous.updated_at)>15*60000;
+    const count=stale?1:(previous?.attempts||0)+1;
+    const locked=count>=5?new Date(Date.now()+15*60000).toISOString():null;
+    await db.prepare('INSERT INTO login_attempts(bucket,attempts,locked_until,updated_at) VALUES (?,?,?,?) ON CONFLICT(bucket) DO UPDATE SET attempts=excluded.attempts,locked_until=excluded.locked_until,updated_at=excluded.updated_at')
+      .bind(bucket,count,locked,iso()).run();
+    return reject(403,'كلمة مرور المدير الحالية غير صحيحة');
+  }
+  await db.prepare('DELETE FROM login_attempts WHERE bucket=?').bind(bucket).run();
+  const salt=randomB64(18),hash=await passwordHash(b.new_password,salt);
+  await db.prepare("UPDATE users SET password_hash=?,password_salt=?,password_iterations=?,must_change_password=1,updated_at=datetime('now') WHERE id=? AND organization_id=?")
+    .bind(hash,salt,PBKDF2_ROUNDS,id,ORG).run();
+  await db.prepare('DELETE FROM sessions WHERE user_id=?').bind(id).run();
+  await ensurePushStorage(db);
+  await db.prepare('DELETE FROM push_subscriptions WHERE organization_id=? AND user_id=?').bind(ORG,id).run();
+  await audit(db,actor,'user.password_reset','user',id,{forced_change:true,revoked_sessions:true});
+  return response({ok:true,must_change_password:true,sessions_revoked:true,push_subscriptions_revoked:true});
 }
 async function changePassword(db,user,request) {
   const b=await bodyJson(request);
@@ -1042,7 +1095,7 @@ export async function onRequest(context) {
       if (method!=='POST') return reject(405,'طريقة غير مدعومة؛ استخدم POST');
       return importMb10Punches(context);
     }
-    if (path==='status' && method==='GET') return response({setupRequired:await setupRequired(db),version:'0.2.23',pushConfigured:pushConfigured(env)});
+    if (path==='status' && method==='GET') return response({setupRequired:await setupRequired(db),version:'0.2.24',pushConfigured:pushConfigured(env)});
     if (path==='setup' && method==='POST') return initialSetup(db,env,request);
     if (path==='login' && method==='POST') return login(db,request);
     const user=await sessionUser(db,request);
@@ -1113,6 +1166,7 @@ export async function onRequest(context) {
     }
     if (path==='users' && method==='POST') return createUser(db,user,request);
     if (path.startsWith('users/') && method==='PATCH') return updateUser(db,user,path.slice(6),request);
+    if (path.startsWith('users/') && path.endsWith('/reset-password') && method==='POST') return adminResetUserPassword(db,user,path.slice(6,-('/reset-password'.length)),request);
     if (path==='audit' && method==='GET'){
       const rows=await db.prepare('SELECT id,actor_user_id,event_type,entity_type,entity_id,details_json,occurred_at FROM audit_events WHERE organization_id=? ORDER BY occurred_at DESC LIMIT 200').bind(ORG).all();
       return response({items:rows.results});

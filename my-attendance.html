@@ -17,9 +17,14 @@ textarea{width:100%;min-height:90px;resize:vertical}label{display:block;margin:1
 .alert.success{border-color:#087546;background:#ecf8f0}
 .alert b{display:block;margin-bottom:4px}.alert p{margin:0}
 .state{padding:10px;background:#eaf3ed;border-radius:10px;white-space:pre-wrap;margin:10px 0}
+.movement-list{display:grid;gap:8px}.movement{border:1px solid #dbe7df;background:#fbfdfb;border-radius:11px;padding:10px 13px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.movement strong{color:#125636}.movement .type{display:inline-block;border-radius:14px;padding:4px 9px;font-size:.88rem;background:#e4f2e8}
+.movement .type.other{background:#f2ede1;color:#725615}.movement .type.out{background:#ffecec;color:#9c2c2c}
+.movement small{font-size:.84rem;line-height:1.6}
+
 .hidden{display:none}button.secondary{background:#eaf4ec;color:#165237}.login-link{display:inline-flex;padding:11px 15px;border-radius:10px;background:#087546;color:white;text-decoration:none}.auth-panel{border-right:4px solid #b98832}
 </style></head><body><main>
-<header><h1>دوامي وتنبيهاتي</h1><small>دوام الميسر — 0.2.21 · بياناتي الشخصية فقط</small>
+<header><h1>دوامي وتنبيهاتي</h1><small>دوام الميسر — 0.2.22 · بياناتي الشخصية فقط</small>
 <p class="hint">متابعة الحضور والانصراف والتنبيه عند عدم ظهور بصمة بعد المزامنة، مع إمكانية إرسال بلاغ للمراجعة.</p>
 <div class="row"><a href="./">العودة للتطبيق</a><span id="identity"></span><button id="switchAccount" type="button" class="secondary hidden">تسجيل الخروج / تغيير العامل</button></div>
 </header>
@@ -28,7 +33,10 @@ textarea{width:100%;min-height:90px;resize:vertical}label{display:block;margin:1
 <section class="panel"><div class="row"><label for="date">التاريخ</label><input type="date" id="date"><button id="load">تحديث الحالة</button><button id="notify" class="secondary">تفعيل تنبيهات الجوال بالخلفية</button><button id="disablePush" class="secondary hidden">إيقاف التنبيهات</button><button id="testPush" class="secondary" disabled>إرسال تنبيه تجريبي</button></div>
 <p class="hint">التنبيهات تعمل بعد الموافقة وتسجيل اشتراك الجهاز، حتى عند إغلاق الصفحة إذا سمح نظام الجوال بذلك. يلزم اتصال الكمبيوتر بجهاز MB10 ومزامنة ناجحة. عدم ظهور البصمة ليس دليلًا على فشل الماسح ولا يؤدي إلى خصم تلقائي.</p><div id="pushStatus" class="hint" role="status"></div><div id="message" class="state">جارٍ التحقق من تسجيل الدخول...</div>
 <div id="sync" class="hint"></div></section>
-<section class="panel hidden" id="details"><h2>حالة دوامي</h2><div class="grid" id="stats"></div></section>
+<section class="panel hidden" id="details"><h2>حالة دوامي</h2><div class="grid" id="stats"></div>
+<p class="hint">تُعرض البصمات المسجلة منفصلةً عن الحضور والانصراف المؤكدين. الحركة غير المحددة لا تعني فشل التبصيم ولا تُحسب غيابًا أو خصمًا تلقائيًا.</p></section>
+<section class="panel"><h2>بصماتي المسجلة</h2><div id="biometricState" class="state">جارٍ فحص بصمات اليوم...</div>
+<div id="personalMovements" class="movement-list"></div></section>
 <section class="panel"><h2>التنبيهات</h2><div id="alerts"></div></section>
 <section class="panel"><h2>إبلاغ الإدارة عن مشكلة تبصيم</h2>
 <p class="hint">يسجل البلاغ في سجل مراجعة الإدارة، ولا ينشئ بصمة ولا يغير الراتب أو الخصومات.</p>
@@ -63,6 +71,8 @@ function showAuthGate(reason){
  $('details').classList.add('hidden');
  $('alerts').replaceChildren();
  $('stats').replaceChildren();
+ $('personalMovements').replaceChildren();
+ $('biometricState').textContent='';
 }
 async function checkAccess(){
  try{
@@ -90,17 +100,48 @@ $('switchAccount').addEventListener('click',async()=>{
  window.location.assign('/');
 });
 function fmt(time){return time?time.slice(11,16):'—'}
-function setStats(day){
+function setStats(day,biometric={}){
  $('stats').replaceChildren();
- for(const [label,value] of [
-   ['أول حضور',fmt(day.first_in)],['آخر انصراف',fmt(day.last_out)],
-   ['دقائق التأخر',day.late_minutes??0],['دقائق الاستعذار',day.absence_minutes??0],
-   ['دقائق الخروج المبكر',day.early_exit_minutes??0],
-   ['حالة الحضور',({completed:'مكتمل',missing_checkout:'انصراف غير مؤكد',no_checkin:'لا توجد بصمة حضور',weekly_off:'إجازة أسبوعية'})[day.status]||day.status]
- ]){
+ const unclassified=!!biometric.total_movements&&!day.first_in;
+ const status=unclassified?'بصمة مسجلة — النوع غير مؤكد':
+  ({completed:'مكتمل',missing_checkout:'انصراف غير مؤكد',no_checkin:'لا يوجد حضور مؤكد',weekly_off:'إجازة أسبوعية'})[day.status]||day.status;
+ const metrics=[
+   ['أول حركة بصمة',fmt(biometric.first_recorded)],
+   ['آخر حركة بصمة',fmt(biometric.last_recorded)],
+   ['عدد الحركات المسجلة',biometric.total_movements??0],
+   ['أول حضور مؤكد',fmt(day.first_in)],['آخر انصراف مؤكد',fmt(day.last_out)],
+   ['حالة الحضور',status]
+ ];
+ // Do not present calculated absences/penalties as definitive if MB10 raw
+ // scan direction is unknown.
+ if(!biometric.has_unclassified){
+  metrics.push(['دقائق التأخر',day.late_minutes??0],['دقائق الاستعذار',day.absence_minutes??0],['دقائق الخروج المبكر',day.early_exit_minutes??0]);
+ }
+ for(const [label,value] of metrics){
   const box=addText($('stats'),'div',label,'stat');addText(box,'strong',value);
  }
  $('details').classList.remove('hidden');
+}
+function showMovements(data){
+ const el=$('personalMovements'),summary=$('biometricState');
+ el.replaceChildren();
+ const movements=data.movements||[],bio=data.biometric||{};
+ if(!bio.total_movements){
+  summary.textContent='لا توجد حركة ظاهرة لهذا التاريخ حتى آخر مزامنة. تحقق من التاريخ أو أبلغ الإدارة إن كنت قد بصمت.';
+  return;
+ }
+ summary.textContent='تم العثور على '+Number(bio.total_movements)+' حركة مسجلة'+(bio.device_movements?' (منها '+Number(bio.device_movements)+' من جهاز MB10).':' .')+
+   (bio.has_unclassified?' توجد حركات لم يحدد الجهاز نوعها؛ ليست بصمات مفقودة.':'')+
+   (bio.truncated?' عرض أول 500 حركة فقط.':'');
+ for(const item of movements.slice().reverse()){
+  const movement=addText(el,'div','','movement');
+  const time=addText(movement,'div','');
+  addText(time,'strong',fmt(item.timestamp));
+  const rawText=item.source==='device'&&item.raw_code!=null?'رمز الجهاز: '+item.raw_code:'حركة '+(item.source==='manual'?'يدوية':'من السجل');
+  addText(time,'small',rawText+(item.record_count>1?' · '+item.record_count+' تسجيلات في التوقيت نفسه':''));
+  const name=item.kind==='in'?'حضور مسجل':item.kind==='out'?'انصراف مسجل':'بصمة مسجلة — النوع غير محدد';
+  addText(movement,'span',name,'type '+(item.kind||'other'));
+ }
 }
 async function load(){
  if(!authorized)return;
@@ -117,13 +158,16 @@ async function load(){
     addText(el,'b',a.title);addText(el,'p',a.message);
   }
   if(data.linked){
-    setStats(data.summary);
+    setStats(data.summary,data.biometric);
+    showMovements(data);
     const sync=data.last_sync;
     $('sync').textContent=sync?'آخر حالة مزامنة: '+({done:'مكتملة',error:'فشلت',running:'قيد التشغيل',pending:'بانتظار المعالجة'})[sync.state]+' · '+(sync.finished_at||'غير متوفر'):'لا توجد معلومات عن آخر مزامنة';
     message.textContent='الحركات المعروضة من السجلات المتاحة، وقد تتأخر بصمات الجهاز حتى وصول المزامنة.';
   }else{
     $('details').classList.add('hidden');
     $('sync').textContent='';
+    $('personalMovements').replaceChildren();
+    $('biometricState').textContent='لا يمكن عرض بصمات عامل غير مربوط بحسابه.';
     message.textContent='يجب ربط هذا الحساب بسجل العامل بواسطة مدير النظام.';
   }
 
@@ -131,6 +175,8 @@ async function load(){
   if(e.status===401){showAuthGate('انتهت جلسة الحساب. سجّل الدخول مجددًا قبل عرض بيانات العامل.');return;}
   message.textContent='تعذر تحديث بياناتك: '+e.message+'\nإذا انقطع الاتصال، فلا يُعد ذلك دليلًا على إخفاق التبصيم.';
   alerts.replaceChildren();$('sync').textContent='';
+  $('personalMovements').replaceChildren();
+  $('biometricState').textContent='تعذر تحميل سجل بصماتك. حاول تحديث الحالة أو تحقق من الاتصال.';
   $('details').classList.add('hidden');
  }finally{$('load').disabled=false}
 }
@@ -165,6 +211,7 @@ async function refreshPushStatus(){
   const permission=Notification.permission;
   const matching=!!current&&sameBytes(current.options.applicationServerKey,base64ToBytes(config.public_key));
   const active=matching&&info.enabled&&permission==='granted';
+  activate.textContent=current&&!info.enabled?'ربط إشعارات هذا الجوال بحسابي':'تفعيل تنبيهات الجوال بالخلفية';
   disable.classList.toggle('hidden',!active);
   activate.classList.toggle('hidden',active);
   test.disabled=!active;
@@ -177,7 +224,7 @@ async function refreshPushStatus(){
    !matching?
     'اشتراك هذا الجوال بمفتاح قديم. اضغط «تفعيل تنبيهات الجوال بالخلفية» لتحديثه.':
    !info.enabled?
-    'لم يُحفظ اشتراك هذا الجوال في حساب العامل. اضغط «تفعيل تنبيهات الجوال بالخلفية» لإعادة التسجيل.':
+    'المتصفح يتذكر الاشتراك، لكنه غير مربوط بحساب العامل الحالي. اضغط «ربط إشعارات هذا الجوال بحسابي» ثم أعد الاختبار.':
     'اسمح بالإشعارات ثم اضغط «تفعيل تنبيهات الجوال بالخلفية».';
  }catch(e){
   if(e.status===401){showAuthGate('انتهت جلسة الدخول. سجّل الدخول بحساب العامل أولًا.');return;}
@@ -203,7 +250,7 @@ $('notify').addEventListener('click',async()=>{
   await api('push-subscription',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({subscription:sub.toJSON()})});
   $('pushStatus').textContent='تم تسجيل الجهاز بنجاح. ستصلك تنبيهات الحضور بعد المزامنة حتى لو أغلقت الصفحة، بحسب إعدادات الجوال.';
   await refreshPushStatus();
- }catch(e){$('pushStatus').textContent='لم يتم تفعيل التنبيهات: '+e.message}
+ }catch(e){$('pushStatus').textContent='لم يتم تفعيل التنبيهات أو ربطها بحسابك: '+e.message+'. تأكد من فتح الصفحة في Chrome ومن السماح بإشعارات الموقع.'}
  finally{pushBusy=false;$('notify').disabled=false}
 });
 $('disablePush').addEventListener('click',async()=>{

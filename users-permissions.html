@@ -141,8 +141,27 @@ function addOptions(select,entries,first){
  for(const [val,label] of entries){const opt=document.createElement('option');opt.value=String(val);opt.textContent=label;select.append(opt);}
 }
 const params=new URLSearchParams(location.search);
-if(params.has('embedded'))document.body.classList.add('embedded');
+if(params.has('embedded')){
+ params.delete('embedded');
+ location.replace(location.pathname+(params.toString()?'?'+params.toString():''));
+}
 const requestedEmail=(params.get('email')||'').trim().toLowerCase();
+let activePanel='accountPanel';
+function activatePanel(id){
+ activePanel=id;
+ for(const section of document.querySelectorAll('.screen-tab')){
+  section.classList.toggle('selected',section.id===id);
+ }
+ for(const btn of document.querySelectorAll('[data-panel]')){
+  const on=btn.dataset.panel===id;
+  btn.classList.toggle('active',on);btn.setAttribute('aria-pressed',String(on));
+ }
+ if(id==='createPanel')$('createPanel').open=true;
+ if(id==='auditPanel')$('auditPanel').open=true;
+ $('mainActions').classList.toggle('hidden',!['accountPanel','permissionsPanel'].includes(id));
+}
+document.querySelectorAll('[data-panel]').forEach(btn=>btn.addEventListener('click',()=>activatePanel(btn.dataset.panel)));
+activatePanel('accountPanel');
 function populateStatic(){
  const entries=Object.entries(roles);addOptions($('accountRole'),entries);addOptions($('newRole'),entries);
  $('newRole').value='viewer';
@@ -186,10 +205,13 @@ function renderState(){
  employee.disabled=busy||!r;
  save.disabled=busy||!r||(!changedFields().length&&!isDirtyPermissions());
  $('reset').disabled=busy||!r;
- $('passwordHint').textContent=self?'لتغيير كلمة مرور حسابك الإداري، أدخل كلمة مرورك الحالية ثم الجديدة. ستحتاج إلى تسجيل الدخول مجددًا.':
-  'إعادة التعيين للحساب المحدد: يجب إدخال كلمة مرور المدير الحالية، ثم كلمة مؤقتة جديدة. لا يمكن استرجاع القديمة.';
- $('adminPasswordLabel').textContent=self?'كلمة المرور الحالية لحسابك':'كلمة المرور الحالية للمدير للتأكيد';
- $('reset').textContent=self?'تغيير كلمة مروري':'إعادة تعيين كلمة مرور المستخدم';
+ $('passwordHint').textContent=self?'لتغيير كلمة مرور حسابك الإداري، أدخل كلمة مرورك الحالية ثم الجديدة.':
+  'لإبطال كلمة المرور السابقة، اكتب بريد المستخدم للتأكيد ثم اختر كلمة جديدة. لا تحتاج إلى معرفة كلمته القديمة.';
+ $('adminPwdField').classList.toggle('hidden',!self);
+ $('confirmEmailField').classList.toggle('hidden',self);
+ $('adminPasswordLabel').textContent='كلمة المرور الحالية لحسابك';
+ $('reset').textContent=self?'تغيير كلمة مروري':'حفظ كلمة المرور الجديدة';
+ $('disableAccount').disabled=busy||!r||self||!r.is_active;
 }
 function renderPermissions(){
  const r=selected();items.replaceChildren();permissionInputs={};
@@ -206,7 +228,7 @@ function renderPermissions(){
  }
 }
 function clearPasswords(){
- for(const id of ['adminPassword','resetPassword','confirmPassword','newPassword','newConfirm'])$(id).value='';
+ for(const id of ['adminPassword','confirmEmail','resetPassword','confirmPassword','newPassword','newConfirm'])$(id).value='';
 }
 function renderSelected(){
  const r=selected();
@@ -248,11 +270,32 @@ async function load(focusId){
   items.replaceChildren();user.disabled=true;save.disabled=true;$('reset').disabled=true;
  }
 }
-user.addEventListener('change',()=>{renderSelected()});
+user.addEventListener('change',()=>{
+ const next=user.value;
+ if(chosenId&&next!==chosenId&&(changedFields().length||isDirtyPermissions())&&
+  !confirm('توجد تعديلات غير محفوظة. هل تريد الانتقال إلى حساب آخر دون حفظها؟')){
+  user.value=chosenId;return;
+ }
+ renderSelected();
+});
 for(const id of ['accountName','accountEmail','accountRole','accountActive','employee','accountDept','scope']){
  $(id).addEventListener(id==='accountRole'||id==='accountActive'||id==='employee'||id==='scope'?'change':'input',()=>{if(id==='accountRole'&&selected()?.role==='viewer'&&$('accountRole').value!=='viewer')scope.value=initialScope;renderState()});
 }
 $('undo').addEventListener('click',()=>{renderSelected();notice('أُلغيت التعديلات غير المحفوظة.')});
+$('disableAccount').addEventListener('click',async()=>{
+ const r=selected();if(!r||busy||r.id===sessionId||!r.is_active)return;
+ const typed=prompt('لإلغاء الحساب دون حذف سجلاته، اكتب البريد الإلكتروني للمستخدم للتأكيد:');
+ if(typed===null)return;
+ if(typed.trim().toLowerCase()!==(r.email||'').toLowerCase()){
+  notice('لم يتم إيقاف الحساب؛ البريد الإلكتروني غير مطابق.','error');return;
+ }
+ busy=true;renderState();
+ try{
+  await api('users/'+encodeURIComponent(r.id),{method:'PATCH',headers:header,body:JSON.stringify({is_active:false})});
+  busy=false;await load(r.id);
+  notice('أُلغي استخدام الحساب وأُبطلت جلساته. سجلات الحضور والتدقيق محفوظة، ويمكن إعادة تفعيله لاحقًا.','success');
+ }catch(e){busy=false;renderState();notice('تعذر إيقاف الحساب: '+e.message,'error')}
+});
 $('reload').addEventListener('click',()=>load());
 save.addEventListener('click',async()=>{
  const r=selected();if(!r||busy)return;
@@ -287,15 +330,17 @@ save.addEventListener('click',async()=>{
 $('reset').addEventListener('click',async()=>{
  const r=selected();if(!r||busy)return;
  const password=$('resetPassword').value,confirmPass=$('confirmPassword').value,adminPwd=$('adminPassword').value;
+ const confirmedEmail=$('confirmEmail').value.trim().toLowerCase();
  if(password.length<12||password.length>128){$('passwordMsg').textContent='كلمة المرور الجديدة يجب أن تكون من 12 إلى 128 حرفًا.';return}
  if(password!==confirmPass){$('passwordMsg').textContent='كلمتا المرور الجديدتان غير متطابقتين.';return}
- if(!adminPwd){$('passwordMsg').textContent='أدخل كلمة مرور المدير الحالية للتأكيد.';return}
  const self=r.id===sessionId;
+ if(self&&!adminPwd){$('passwordMsg').textContent='أدخل كلمة المرور الحالية لحسابك الإداري.';return}
+ if(!self&&confirmedEmail!==(r.email||'').toLowerCase()){$('passwordMsg').textContent='البريد المدخل لا يطابق حساب المستخدم المحدد.';return}
  if(!confirm(self?'تأكيد تغيير كلمة مرور حسابك؟ ستنتهي جلسة الدخول الحالية.':'تأكيد إعادة تعيين كلمة مرور هذا المستخدم وإلغاء جلساته السابقة؟'))return;
  busy=true;renderState();$('passwordMsg').textContent='جارٍ حفظ كلمة المرور الجديدة...';
  try{
   const endpoint=self?'change-password':'users/'+encodeURIComponent(r.id)+'/reset-password';
-  const body=self?{current_password:adminPwd,new_password:password}:{admin_password:adminPwd,new_password:password};
+  const body=self?{current_password:adminPwd,new_password:password}:{confirm_email:confirmedEmail,new_password:password};
   await api(endpoint,{method:'POST',headers:header,body:JSON.stringify(body)});
   clearPasswords();busy=false;
   if(self){notice('تغيرت كلمة مرورك بنجاح. يرجى تسجيل الدخول مجددًا.','success');window.location.assign('/');return}

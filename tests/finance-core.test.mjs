@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {DEFAULTS,cycle,experienceYears,experiencePay,projection,calloutPay,DAILY_OVERTIME_CAP} from '../lib/finance-module.js';
+import {DEFAULTS,cycle,experienceYears,experiencePay,projection,calloutPay,DAILY_OVERTIME_CAP,periodicEvaluationPoints} from '../lib/finance-module.js';
 
 test('finance cycle is inclusive 26 prior month through 25 named month',()=>{
  assert.deepEqual(cycle('2026-11'),{month:'2026-11',from:'2026-10-26',to:'2026-11-25'});
@@ -83,4 +83,13 @@ test('only approved callouts contribute to the monthly report',()=>{
  assert.equal(r.report_sources.approved_callouts.length,1);
  assert.equal(r.report_sources.pending_callouts,1);
  assert.equal(r.safe_to_finalize,false);
+});
+
+test('committee evaluation saves 75 non-biometric points and never requires a monthly scan',()=>{
+ const full=[100,100,null,100,100,100,100];
+ assert.deepEqual(periodicEvaluationPoints(full),[2,8,0,15,20,20,10]);
+ assert.equal(periodicEvaluationPoints(full).reduce((sum,n)=>sum+n,0),75);
+ assert.deepEqual(periodicEvaluationPoints([50,50,null,50,50,50,50]),[1,4,0,7.5,10,10,5]);
+ assert.throws(()=>periodicEvaluationPoints([100,100,100,100,100,100,100]));
+ assert.throws(()=>periodicEvaluationPoints([101,100,null,100,100,100,100]));
 });

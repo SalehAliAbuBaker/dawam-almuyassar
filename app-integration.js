@@ -33,10 +33,10 @@
     manifest.href='/dawam.webmanifest';
     let icon=document.querySelector('link[rel="icon"]');
     if(!icon){icon=document.createElement('link');icon.rel='icon';document.head.appendChild(icon);}
-    icon.href='/offline-icon.svg';icon.type='image/svg+xml';
+    icon.href='/app-icon-192.png';icon.type='image/png';
     let touch=document.querySelector('link[rel="apple-touch-icon"]');
     if(!touch){touch=document.createElement('link');touch.rel='apple-touch-icon';document.head.appendChild(touch);}
-    touch.href='/offline-icon.svg';
+    touch.href='/app-icon-192.png';
   }
   function decorateMonthlyLinks(){
     // Existing menu entries already carry their approved icons. Never inject a second one.

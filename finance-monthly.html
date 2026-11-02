@@ -339,7 +339,7 @@ function refreshExtraLimit(){
  const value=Number($('extraAmount').value);
  const available=Math.max(0,8000-used);
  $('extraRemaining').textContent='المتاح لهذا العامل في هذا اليوم: '+money(available)+' ريال';
- $('saveExtra').disabled=!(Number.isFinite(value)&&value>=3000&&value<=8000&&used+value<=8000);
+ $('saveExtra').disabled=!(Number.isFinite(value)&&value>=3000&&value<=7000&&used+value<=8000);
 }
 ['extraEmployee','extraDate','extraAmount'].forEach(id=>$(id).addEventListener('change',refreshExtraLimit));
 $('extraAmount').addEventListener('input',refreshExtraLimit);

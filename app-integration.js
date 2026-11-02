@@ -39,11 +39,30 @@
     touch.href='/offline-icon.svg';
   }
   function decorateMonthlyLinks(){
+    // One icon per link. Remove icons previously injected by older deployments,
+    // but keep the single native icon when the existing sidebar already provides one.
     document.querySelectorAll('a[href*="finance-monthly.html"]').forEach(el=>{
-      if(!el.querySelector('.dawam-monthly-icon,svg')){
-       const wrapper=document.createElement('span');wrapper.className='dawam-monthly-icon';wrapper.style.cssText='display:inline-flex;vertical-align:middle;flex-shrink:0;margin-inline-end:7px';
-       wrapper.innerHTML=monthlyIcon;el.prepend(wrapper);
+      const wrappers=[...el.querySelectorAll('.dawam-monthly-icon')];
+      const nativeIcons=[...el.querySelectorAll('svg')].filter(svg=>!svg.closest('.dawam-monthly-icon'));
+      if(nativeIcons.length){
+        wrappers.forEach(icon=>icon.remove());
+      }else if(wrappers.length>1){
+        wrappers.slice(1).forEach(icon=>icon.remove());
+      }else if(!wrappers.length){
+        const wrapper=document.createElement('span');
+        wrapper.className='dawam-monthly-icon';
+        wrapper.setAttribute('aria-hidden','true');
+        wrapper.innerHTML=monthlyIcon;
+        el.prepend(wrapper);
       }
+      el.style.setProperty('font-family',"'Tajawal',Tahoma,Arial,sans-serif");
+      el.style.setProperty('font-size','inherit');
+      el.style.setProperty('font-weight','inherit');
+      el.style.setProperty('text-shadow','none');
+      el.style.setProperty('box-shadow','none');
+      el.style.setProperty('line-height','inherit');
+      el.style.setProperty('letter-spacing','normal');
+      el.style.setProperty('gap','8px');
     });
   }
   function consolidateWorkerNavigation(){
@@ -129,10 +148,11 @@
     link.style.display='flex';
     link.style.width='calc(100% - 26px)';
     link.style.margin='5px 13px 8px';
-    link.style.padding='9px 12px';
+    link.style.padding='10px 14px';
     link.style.background='#e9f4eb';
     link.style.color='#075c38';
     link.style.boxShadow='none';
+    link.style.fontFamily="'Tajawal',Tahoma,Arial,sans-serif";
     link.style.fontSize='inherit';
     link.style.fontWeight='inherit';
     link.style.textShadow='none';

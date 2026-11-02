@@ -55,7 +55,8 @@ tfoot td{font-weight:700}.kpis{display:flex;gap:12px;flex-wrap:wrap}.kpi{flex:1;
  <button class="active" data-tab="preview">كشف الدورة المالية</button>
  <button data-tab="profiles">ملف العامل والاستحقاقات</button>
  <button data-tab="evaluations">تقييم العامل</button>
- <button data-tab="extras">العمل الإضافي</button>
+ <button data-tab="extras">العمل الإضافي بالمهمة</button>
+ <button data-tab="callouts">الاستدعاء بالساعات</button>
  <button data-tab="policy">إعدادات الاستحقاقات</button>
 </div>
 
@@ -133,6 +134,24 @@ tfoot td{font-weight:700}.kpis{display:flex;gap:12px;flex-wrap:wrap}.kpi{flex:1;
  </div>
 </section>
 
+<section id="callouts" class="panel">
+ <div class="card">
+  <h2>الاستدعاء — إدخال الساعات يدويًا</h2>
+  <p class="muted">تُكتب ساعات العمل يدويًا دون تسجيل وقت البداية والنهاية أو استخدام البصمة. الساعة الأولى 3,000 ريال، وكل ساعة تالية 1,000 ريال. يُحسب المبلغ للعرض ويُضاف إلى كشف الحافز بعد الاعتماد.</p>
+  <div class="grid">
+   <div class="field"><label for="calloutEmployee">العامل</label><select id="calloutEmployee"></select></div>
+   <div class="field"><label for="calloutDate">تاريخ الاستدعاء</label><input id="calloutDate" type="date"></div>
+   <div class="field"><label for="calloutTask">وصف الاستدعاء</label><input id="calloutTask" placeholder="اسم المهمة أو سبب الاستدعاء"></div>
+   <div class="field"><label for="calloutHours">عدد الساعات (يدويًا)</label><input id="calloutHours" type="number" min="1" max="23" step="1" value="1" inputmode="numeric"></div>
+  </div>
+  <div class="actions"><span id="calloutEstimate" class="kpi"><strong>3,000 ريال</strong></span><button id="saveCallout">تسجيل الاستدعاء للمراجعة</button></div>
+ </div>
+ <div class="card">
+  <h2>الاستدعاءات المسجلة في الدورة المالية</h2>
+  <div class="table-wrap"><table><thead><tr><th>العامل</th><th>التاريخ</th><th>المهمة</th><th>الساعات المدخلة</th><th>المبلغ</th><th>حالة الاعتماد</th><th>الإجراء</th></tr></thead><tbody id="calloutsBody"></tbody></table></div>
+ </div>
+</section>
+
 <section id="policy" class="panel">
  <div class="card">
   <h2>السياسة المالية الافتراضية</h2>
@@ -178,8 +197,8 @@ function setTab(id){
 document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>setTab(b.dataset.tab)));
 function selectOptions(){
  const html='<option value="">اختر العامل</option>'+employees.map(e=>'<option value="'+safe(e.id)+'">'+safe(e.code+' — '+e.name)+'</option>').join('');
- ['profileEmployee','evaluationEmployee','extraEmployee'].forEach(id=>{$(id).innerHTML=html;});
- if(employees.length)['profileEmployee','evaluationEmployee','extraEmployee'].forEach(id=>{$(id).value=employees[0].id;});
+ ['profileEmployee','evaluationEmployee','extraEmployee','calloutEmployee'].forEach(id=>{$(id).innerHTML=html;});
+ if(employees.length)['profileEmployee','evaluationEmployee','extraEmployee','calloutEmployee'].forEach(id=>{$(id).value=employees[0].id;});
  setProfile();
 }
 function field(id,value){$(id).value=value===null||value===undefined?'':String(value)}
@@ -237,7 +256,7 @@ function renderPolicy(){
 $('savePolicy').addEventListener('click',()=>attempt(async()=>{
  const data={};for(const key of Object.keys(labels))data[key]=Number($('policy_'+key).value);
  const res=await api('policy','PUT',{policy:data});policy=res.policy;
- notice('حُفظت سياسة الاستحقاقات');await loadPreview();
+ notice('حُفظت سياسة الاستحقاقات');refreshCalloutEstimate();await loadPreview();
 }));
 function monthCycle(month){
  const [y,m]=month.split('-').map(Number);
@@ -275,6 +294,36 @@ async function loadPreview(){
 $('query').addEventListener('input',renderPreview);
 $('refresh').addEventListener('click',()=>attempt(loadPreview));
 $('print').addEventListener('click',()=>window.print());
+function refreshCalloutEstimate(){
+ const hours=Number($('calloutHours').value);
+ if(!Number.isInteger(hours)||hours<1||hours>23){$('calloutEstimate').textContent='عدد الساعات غير صحيح';return;}
+ const value=Number(policy.callout_first_hour??3000)+(hours-1)*Number(policy.callout_additional_hour??1000);
+ $('calloutEstimate').textContent='مبلغ الاستدعاء المتوقع: '+money(value)+' ريال';
+}
+$('calloutHours').addEventListener('input',refreshCalloutEstimate);
+async function loadCallouts(){
+ const month=$('month').value;if(!month)return;
+ const d=await api('callouts?month='+encodeURIComponent(month));
+ $('calloutsBody').innerHTML=d.items.map(x=>
+ '<tr><td>'+safe(x.employee_name)+'</td><td>'+safe(x.work_date)+'</td><td>'+safe(x.task)+'</td><td>'+money(x.hours)+'</td><td>'+money(x.amount)+'</td>'+
+ '<td>'+safe(x.status==='pending'?'بانتظار الاعتماد':x.status==='approved'?'معتمد':'مرفوض')+'</td>'+
+ '<td>'+(x.status==='pending'&&['admin','accountant'].includes(role)?'<button type="button" data-callout="'+safe(x.id)+'" data-decision="approved">اعتماد</button> <button class="secondary" type="button" data-callout="'+safe(x.id)+'" data-decision="rejected">رفض</button>':'—')+'</td></tr>'
+ ).join('')||'<tr><td colspan="7">لا توجد استدعاءات مسجلة في هذه الدورة</td></tr>';
+ document.querySelectorAll('[data-callout]').forEach(b=>b.addEventListener('click',()=>attempt(async()=>{
+   if(!confirm('هل تعتمد قرار الاستدعاء المحدد؟'))return;
+   await api('callouts/'+encodeURIComponent(b.dataset.callout)+'/decision','POST',{status:b.dataset.decision});
+   await loadCallouts();if(role!=='hr')await loadPreview();notice('تم حفظ قرار الاستدعاء');
+ })));
+}
+$('saveCallout').addEventListener('click',()=>attempt(async()=>{
+ const employee_id=$('calloutEmployee').value;
+ if(!employee_id)throw Error('اختر العامل');
+ const hours=Number($('calloutHours').value);
+ if(!Number.isInteger(hours)||hours<1||hours>23)throw Error('أدخل عدد الساعات يدويًا من 1 إلى 23');
+ const res=await api('callouts','POST',{employee_id,work_date:$('calloutDate').value,task:$('calloutTask').value,hours});
+ $('calloutTask').value='';await loadCallouts();
+ notice('سُجّل الاستدعاء بقيمة '+money(res.amount)+' ريال، بانتظار الاعتماد');
+}));
 async function loadExtras(){
  const month=$('month').value;if(!month)return;
  const d=await api('extras?month='+encodeURIComponent(month));extraItems=d.items;
@@ -293,7 +342,7 @@ $('saveExtra').addEventListener('click',()=>attempt(async()=>{
  await api('extras','POST',{employee_id,work_date:$('extraDate').value,task:$('extraTask').value,amount:Number($('extraAmount').value)});
  $('extraTask').value='';await loadExtras();notice('سُجلت المهمة بانتظار الاعتماد');
 }));
-$('month').addEventListener('change',()=>attempt(async()=>{await loadPreview();await loadExtras();}));
+$('month').addEventListener('change',()=>attempt(async()=>{if(role!=='hr')await loadPreview();await loadExtras();await loadCallouts();}));
 async function start(){
  try{
   const me=await fetch('/api/me',{credentials:'same-origin',cache:'no-store'});
@@ -302,13 +351,14 @@ async function start(){
   if(!['admin','accountant','hr'].includes(role)){notice('هذا الحساب لا يملك صلاحية الاطلاع على الاستحقاقات',true);return;}
   const d=new Date(),month=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Aden',year:'numeric',month:'2-digit'}).format(d).replace('/','-');
   $('month').value=/^\d{4}-\d{2}$/.test(month)?month:d.toISOString().slice(0,7);
-  $('evaluationMonth').value=$('month').value;$('extraDate').value=d.toISOString().slice(0,10);
+  $('evaluationMonth').value=$('month').value;$('extraDate').value=d.toISOString().slice(0,10);$('calloutDate').value=d.toISOString().slice(0,10);
   const p=await api('policy');policy=p.policy;
+  refreshCalloutEstimate();
   renderPolicy();renderEvaluation();await loadEmployees();
   if(role!=='admin')$('saveEvaluation').disabled=true;
   if(role==='hr'){$('saveProfile').disabled=true;$('refresh').disabled=true;document.querySelector('[data-tab="preview"]').disabled=true;setTab('profiles');}
   else await loadPreview();
-  await loadExtras();await loadHistory();
+  await loadExtras();await loadCallouts();await loadHistory();
  }catch(e){notice(e.message,true);}
 }
 start();

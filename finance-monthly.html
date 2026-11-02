@@ -313,12 +313,46 @@ async function loadPreview(){
 }
 $('query').addEventListener('input',renderPreview);
 $('refresh').addEventListener('click',()=>attempt(loadPreview));
+$('wide').addEventListener('click',()=>{
+ const active=document.body.classList.toggle('wide-mode');
+ $('wide').setAttribute('aria-pressed',String(active));
+ $('wide').textContent=active?'العودة للعرض المعتاد':'عرض أفقي موسع';
+});
 $('print').addEventListener('click',()=>window.print());
+$('printDetail').addEventListener('click',()=>{
+ document.body.classList.add('print-details');
+ const details=[...document.querySelectorAll('#previewBody details')],original=details.map(d=>d.open);
+ details.forEach(d=>{d.open=true});
+ window.addEventListener('afterprint',()=>{
+  document.body.classList.remove('print-details');
+  details.forEach((d,i)=>{d.open=original[i]});
+ },{once:true});
+ window.print();
+});
+function dailyReserved(employee,date){
+ const applicable=row=>row.employee_id===employee&&row.work_date===date&&row.status!=='rejected';
+ return extraItems.filter(applicable).reduce((sum,row)=>sum+Number(row.amount||0),0)+
+        calloutItems.filter(applicable).reduce((sum,row)=>sum+Number(row.amount||0),0);
+}
+function refreshExtraLimit(){
+ const used=dailyReserved($('extraEmployee').value,$('extraDate').value);
+ const value=Number($('extraAmount').value);
+ const available=Math.max(0,7000-used);
+ $('extraRemaining').textContent='المتاح لهذا العامل في هذا اليوم: '+money(available)+' ريال';
+ $('saveExtra').disabled=!(Number.isFinite(value)&&value>=3000&&value<=7000&&used+value<=7000);
+}
+['extraEmployee','extraDate','extraAmount'].forEach(id=>$(id).addEventListener('change',refreshExtraLimit));
+$('extraAmount').addEventListener('input',refreshExtraLimit);
+['calloutEmployee','calloutDate'].forEach(id=>$(id).addEventListener('change',refreshCalloutEstimate));
 function refreshCalloutEstimate(){
  const hours=Number($('calloutHours').value);
- if(!Number.isInteger(hours)||hours<1||hours>23){$('calloutEstimate').textContent='عدد الساعات غير صحيح';return;}
- const value=Number(policy.callout_first_hour??3000)+(hours-1)*Number(policy.callout_additional_hour??1000);
- $('calloutEstimate').textContent='مبلغ الاستدعاء المتوقع: '+money(value)+' ريال';
+ const used=dailyReserved($('calloutEmployee').value,$('calloutDate').value);
+ const valid=Number.isInteger(hours)&&hours>=1&&hours<=23;
+ const amount=valid?Number(policy.callout_first_hour??3000)+(hours-1)*Number(policy.callout_additional_hour??1000):0;
+ const available=Math.max(0,7000-used);
+ const allowed=valid&&amount<=available&&amount<=7000;
+ $('saveCallout').disabled=!allowed;
+ $('calloutEstimate').textContent=!valid?'أدخل عدد الساعات يدويًا':allowed?'قيمة الاستدعاء: '+money(amount)+' ريال؛ المتاح يوميًا: '+money(available)+' ريال':'يتجاوز سقف 7,000 ريال؛ المتاح لهذا اليوم: '+money(available)+' ريال';
 }
 $('calloutHours').addEventListener('input',refreshCalloutEstimate);
 async function loadCallouts(){

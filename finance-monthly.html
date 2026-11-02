@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#13734a">
-<title>الاستحقاقات والحافز الشهري | دوام الميسر 0.2.28</title>
+<title>الاستحقاقات والحافز الشهري | دوام الميسر 0.2.29</title>
 <style>
 :root{color-scheme:light;--g:#116b43;--g2:#eaf5ee;--line:#dae7dd;--ink:#17382b;--muted:#60786c;--bg:#f5f8f5;--warn:#8c4e12}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.65 Tahoma,Arial,sans-serif}
-main{max-width:1180px;margin:auto;padding:18px 14px 70px}
+main{max-width:1480px;margin:auto;padding:18px 14px 70px}body.wide-mode main{max-width:none;width:100%;padding-inline:10px}
 h1{font-size:23px;margin:0}h2{font-size:17px;margin:0 0 12px}h3{font-size:15px;margin:8px 0}
 header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
 .muted,small{color:var(--muted)}small{font-size:12px}
@@ -19,20 +19,34 @@ button.secondary,.button.secondary{background:white;color:var(--g)}button:disabl
 label{font-weight:600;font-size:13px}input,select,textarea{width:100%;min-width:0;background:#fff;border:1px solid #bed3c4;border-radius:9px;font:inherit;padding:10px;color:var(--ink)}input:focus,select:focus{outline:2px solid #b5debf}
 .actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:14px}
 .banner{border:1px solid #e0c89d;background:#fff7e8;color:#805018;padding:12px 14px;border-radius:11px;margin:10px 0}
-.success{color:var(--g)}.error{color:#a42d2d}.table-wrap{overflow:auto;max-width:100%}
+.success{color:var(--g)}.error{color:#a42d2d}.table-wrap{overflow:auto;max-width:100%;border:1px solid var(--line);border-radius:10px}#preview table{min-width:1300px}#previewBody td{vertical-align:top}.detail-line{background:#f7fbf8;white-space:normal!important;line-height:1.9}.detail-line summary{color:var(--g);cursor:pointer;font-weight:600}.detail-values{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:7px;margin-top:8px}.detail-values div{padding:7px 10px;background:#fff;border:1px solid var(--line);border-radius:8px}.detail-values b{float:left}.wide-mode #preview table{min-width:1400px}.print-heading{display:none}
 table{border-collapse:collapse;min-width:810px;width:100%;font-size:13px}td,th{padding:11px 9px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}th{background:#f0f6f2;color:#245b42;position:sticky;top:0}
 tfoot td{font-weight:700}.kpis{display:flex;gap:12px;flex-wrap:wrap}.kpi{flex:1;min-width:150px;background:var(--g2);padding:14px;border-radius:12px}.kpi strong{display:block;font-size:20px}
 .notready{color:#9c5412}.ready{color:var(--g)}.hide{display:none!important}
 #message{position:sticky;top:0;z-index:5;display:none;padding:12px;border-radius:10px;background:#fffdf2;border:1px solid #e2d4b6;margin-bottom:10px}
 .evaluation-row{display:grid;grid-template-columns:minmax(170px,1fr) 140px 80px;gap:10px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--line)}
 @media(max-width:580px){h1{font-size:19px}.card{padding:13px}.evaluation-row{grid-template-columns:minmax(100px,1fr) 95px 48px;font-size:12px}}
-@media print{.tabs,.actions,header a,#message,.no-print{display:none!important}.panel{display:none!important}#preview.active{display:block!important}body{background:white}.card{box-shadow:none;border:0}main{max-width:none}}
+@page{size:A4 landscape;margin:8mm}
+@media print{
+ .tabs,.actions,header a,#message,.no-print,#query{display:none!important}
+ body{background:white;color:black;font:10px/1.35 Tahoma,Arial,sans-serif}
+ main,body.wide-mode main{padding:0;max-width:none;width:100%}
+ .panel{display:none!important}#preview{display:block!important}
+ header{margin:0 0 8px}h1{font-size:16px}
+ .card{box-shadow:none;border:0;border-radius:0;padding:3px;margin:2px 0}
+ .table-wrap{overflow:visible;border:none}#preview table{min-width:0;table-layout:fixed;width:100%;font-size:8px}
+ table th,table td{font-size:8px;padding:4px 3px;white-space:normal;overflow-wrap:anywhere}
+ th{position:static}tr{break-inside:avoid}td:first-child{width:17%}
+ .detail-line{font-size:8px}.detail-values{display:none}.print-heading{display:block;margin:5px 0}
+ .grid,#stats{display:none!important}#cycleLabel{display:block;font-weight:bold}
+}
+
 </style>
 </head>
 <body>
 <main>
 <header>
- <div><h1>الاستحقاقات والحافز الشهري</h1><small>دوام الميسر — النسخة التجريبية 0.2.28</small></div>
+ <div><h1>الاستحقاقات والحافز الشهري</h1><small>دوام الميسر — النسخة التجريبية 0.2.29</small></div>
  <a class="button secondary" href="/">العودة إلى التطبيق</a>
 </header>
 <div class="banner"><strong>وضع تجريبي آمن:</strong> الحسابات المعروضة مسودات فقط، ولا تُعتمد للصرف ولا تُغيّر الأرصدة أو سجلات البصمة. تسوية رصيد الدوام وخصومات التأخير ما زالت بانتظار ربط الحضور المعتمد.</div>
@@ -51,13 +65,13 @@ tfoot td{font-weight:700}.kpis{display:flex;gap:12px;flex-wrap:wrap}.kpi{flex:1;
    <div class="field"><label for="month">الشهر المالي</label><input id="month" type="month"></div>
    <div class="field"><label for="query">البحث باسم العامل أو الرقم الوظيفي</label><input id="query" placeholder="بحث سريع"></div>
   </div>
-  <div class="actions"><button id="refresh">احتساب المسودة</button><button class="secondary" id="print" type="button">طباعة المسودة</button></div>
+  <div class="actions"><button id="refresh">احتساب المسودة</button><button class="secondary" id="wide" type="button" aria-pressed="false">عرض أفقي موسع</button><button class="secondary" id="print" type="button">طباعة أفقية A4</button></div>
   <small id="cycleLabel"></small>
  </div>
  <div class="card">
   <h2>ملخص الدورة</h2><div id="stats" class="kpis"></div>
   <p class="muted">الحافز المعروض أدناه هو مجموع الاستحقاقات قبل تسوية الحضور؛ لا يمثل صافي الحافز المستحق للصرف.</p>
-  <div class="table-wrap"><table><thead><tr><th>العامل</th><th>الراتب المتوقع</th><th>المعيشة والأسرة</th><th>الخبرة</th><th>الرتبة/المهمة</th><th>التقييم</th><th>الإنجاز والإضافي</th><th>الحافز قبل الخصومات</th><th>الحالة</th></tr></thead><tbody id="previewBody"></tbody></table></div>
+  <div class="print-heading"><strong>دوام الميسر — كشف الاستحقاقات الشهري (مسودة للمراجعة فقط)</strong></div><div class="table-wrap"><table><thead><tr><th>العامل</th><th>الراتب المتوقع</th><th>المعيشة والأسرة</th><th>الخبرة</th><th>الرتبة/المهمة</th><th>التقييم</th><th>الإنجاز</th><th>الإضافي</th><th>الاستدعاء</th><th>الحافز قبل الخصومات</th><th>الحالة</th></tr></thead><tbody id="previewBody"></tbody></table></div>
   <p id="previewFoot" class="muted"></p>
  </div>
 </section>
@@ -141,7 +155,8 @@ const labels={
  experience_6_8:'خبرة من 6 إلى 8 سنوات',experience_9_plus:'خبرة 9 سنوات فما فوق',
  rank_supervisor:'رتبة المشرف',rank_deputy:'رتبة النائب',
  duty_supervisor:'ثقل مهمة المشرف',duty_deputy:'ثقل مهمة النائب',duty_acting:'ثقل مهمة النائب القائم مقام المشرف',duty_cashier:'ثقل مهمة أمين الصندوق',
- evaluation_max:'الحد الأعلى للتقييم',allowed_minutes:'الرصيد الشهري بالدقائق',period_divisor:'مقسوم الراتب بالأيام',workday_minutes:'الدقائق المرجعية اليومية'
+ evaluation_max:'الحد الأعلى للتقييم',allowed_minutes:'الرصيد الشهري بالدقائق',period_divisor:'مقسوم الراتب بالأيام',workday_minutes:'الدقائق المرجعية اليومية',
+ callout_first_hour:'الاستدعاء: الساعة الأولى',callout_additional_hour:'الاستدعاء: كل ساعة تالية'
 };
 const scoreNames=['الاهتمام بالمظهر','اللغة السليمة عند التعامل مع الجميع','الالتزام في الدوام','تطوير أساليب العمل والتغلب على الصعوبات','أداء العمل على أحسن وأكمل وجه','التطوع بساعتين يوميًا أو ما يعادلها','تأثير العمل في المؤسسة على غيره'];
 const caps=[2,8,25,15,20,20,10],money=n=>Number(n||0).toLocaleString('en-US',{maximumFractionDigits:2});

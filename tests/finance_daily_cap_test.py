@@ -41,7 +41,7 @@ class FinanceDailyCapTest(unittest.TestCase):
             INSERT_EXTRA,
             (entry, "org_main", "person1", "2026-11-02", "مهمة", amount, "manager",
              "org_main", "person1", "2026-11-02",
-             "org_main", "person1", "2026-11-02", amount, 7000),
+             "org_main", "person1", "2026-11-02", amount, 8000),
         ).rowcount
 
     def callout(self, entry, amount):
@@ -49,17 +49,17 @@ class FinanceDailyCapTest(unittest.TestCase):
             INSERT_CALLOUT,
             (entry, "org_main", "person1", "2026-11-02", "", "", 120, "استدعاء", amount,
              "manager", "org_main", "person1", "2026-11-02",
-             "org_main", "person1", "2026-11-02", amount, 7000),
+             "org_main", "person1", "2026-11-02", amount, 8000),
         ).rowcount
 
     def decide(self, table, entry, state):
         statement = UPDATE_EXTRA if table == "finance_extras" else UPDATE_CALLOUT
         return self.db.execute(
-            statement, (state, "manager", "org_main", entry, state, 7000)
+            statement, (state, "manager", "org_main", entry, state, 8000)
         ).rowcount
 
     def test_combined_pending_entries_cannot_exceed_cap(self):
-        self.assertEqual(self.extra("task1", 4000), 1)
+        self.assertEqual(self.extra("task1", 5000), 1)
         self.assertEqual(self.callout("call1", 3000), 1)
         self.assertEqual(self.callout("call2", 3000), 0)
         self.assertEqual(self.extra("task2", 3000), 0)

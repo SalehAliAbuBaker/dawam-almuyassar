@@ -17,6 +17,12 @@
       }
     }catch(_){}
   }
+  function mountTajawal(){
+    if(!document.querySelector('link[data-dawam-tajawal]')){
+      const link=document.createElement('link');link.rel='stylesheet';link.href='/tajawal.css';
+      link.dataset.dawamTajawal='true';document.head.appendChild(link);
+    }
+  }
   function mountBrand(){
     // Respect the original CSS; do not override its typeface or heading sizes.
     const imposed=document.getElementById('dawam-consistent-font');
@@ -311,6 +317,7 @@
   }
   function start() {
     mountBrand();
+    mountTajawal();
     loadEmbeddedUserEditor();
     observer.observe(document.body,{childList:true,subtree:true});
     mountVersion();

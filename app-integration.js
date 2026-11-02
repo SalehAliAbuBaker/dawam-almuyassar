@@ -40,7 +40,7 @@
   }
   function decorateMonthlyLinks(){
     document.querySelectorAll('a[href*="finance-monthly.html"]').forEach(el=>{
-      if(!el.querySelector('.dawam-monthly-icon')){
+      if(!el.querySelector('.dawam-monthly-icon,svg')){
        const wrapper=document.createElement('span');wrapper.className='dawam-monthly-icon';wrapper.style.cssText='display:inline-flex;vertical-align:middle;flex-shrink:0;margin-inline-end:7px';
        wrapper.innerHTML=monthlyIcon;el.prepend(wrapper);
       }
@@ -121,7 +121,7 @@
     if(!menu&&!side)return;
     const link=document.createElement('a');
     link.href=financeUrl;
-    link.innerHTML=monthlyIcon+'<span>الحافز الشهري والخصومات</span>';
+    link.innerHTML='<span class="dawam-monthly-icon" aria-hidden="true">'+monthlyIcon+'</span><span>الحافز الشهري والخصومات</span>';
     link.style.gap='8px';
     link.className='dawam-finance-entry';
     link.setAttribute('aria-label','فتح الحافز الشهري والخصومات');
@@ -133,7 +133,9 @@
     link.style.background='#e9f4eb';
     link.style.color='#075c38';
     link.style.boxShadow='none';
-    link.style.fontSize='13px';
+    link.style.fontSize='inherit';
+    link.style.fontWeight='inherit';
+    link.style.textShadow='none';
     if(menu){
       const insertAfter=menu.closest('li')||menu;
       insertAfter.insertAdjacentElement('afterend',link);

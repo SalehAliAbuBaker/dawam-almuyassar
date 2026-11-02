@@ -269,22 +269,42 @@ async function loadEmployees(){
 }
 function renderPreview(){
  const d=previewData;if(!d)return;
- $('cycleLabel').textContent='من '+d.cycle.from+' إلى '+d.cycle.to+' — '+d.cycle.month;
+ $('cycleLabel').textContent='من '+d.cycle.from+' إلى '+d.cycle.to+' — '+d.cycle.month+' — الطباعة أفقية A4';
  const q=$('query').value.trim().toLowerCase();
  const rows=d.items.filter(x=>(x.name+' '+x.code).toLowerCase().includes(q));
  $('stats').innerHTML='<div class="kpi">العاملون<strong>'+d.counts.workers+'</strong></div><div class="kpi">ملفات ناقصة<strong>'+d.counts.profiles_missing+'</strong></div><div class="kpi">تسوية حضور غير مكتملة<strong>'+d.counts.attendance_unreviewed+'</strong></div>';
  $('previewBody').innerHTML=rows.map(x=>{
- const inc=x.incentive,missing=x.incomplete_fields.join('، ');
- return '<tr><td><strong>'+safe(x.name)+'</strong><div class="muted">'+safe(x.code)+'</div></td>'+
- '<td>'+money(x.salary.net)+(x.salary.complete?'':'*')+'</td>'+
- '<td>'+(inc.living===null?'—':money(inc.living))+'</td>'+
- '<td>'+(inc.experience===null?'—':money(inc.experience))+'</td>'+
- '<td>'+money(inc.rank+inc.duty)+'</td><td>'+money(inc.evaluation)+'</td>'+
- '<td>'+money(inc.achievement+inc.approved_extra)+'</td>'+
- '<td><strong>'+money(inc.subtotal_before_attendance)+'</strong></td>'+
- '<td class="notready">'+(missing?'ناقص: '+safe(missing)+'؛ ':'')+'الدوام قيد المراجعة</td></tr>';
- }).join('')||'<tr><td colspan="9">لا توجد نتائج</td></tr>';
- $('previewFoot').textContent='هذه المبالغ تقديرية قبل التحقق من الحضور ولا تصلح للصرف. النجمة (*) تعني أن بيانات التأمين أو الضريبة لم تستكمل. مجموع الحافز لا يشمل تسوية دقائق الدوام أو خصم ما بعد الثامنة.';
+  const inc=x.incentive,missing=x.incomplete_fields.join('، '),src=x.report_sources||{};
+  const details=[
+   ['الراتب الأساسي',x.salary.base],['المواصلات',x.salary.transport],['تأمين المؤسسة',x.salary.company_insurance],
+   ['التأمين الكلي (خصم)',-x.salary.total_insurance],['ضريبة الراتب (خصم)',-x.salary.tax],
+   ['صافي الراتب',x.salary.net],['غلاء المعيشة والأسرة',inc.living],
+   ['سنوات الخدمة',inc.experience_years],['علاوة الخبرة',inc.experience],['علاوة الرتبة',inc.rank],
+   ['ثقل المهمة',inc.duty],['التقييم الشهري',inc.evaluation],
+   ['شهر التقييم المعتمد',src.applied_evaluation_month||'لم يعتمد'],
+   ['الإنجاز',inc.achievement],['تعويض ضريبة الكسب',inc.tax_compensation],
+   ['المهام الإضافية المعتمدة',inc.approved_extra],['الاستدعاء المعتمد',inc.approved_callouts||0],
+   ['المهام بانتظار الاعتماد',src.pending_extras||0],['الاستدعاءات بانتظار الاعتماد',src.pending_callouts||0],
+   ['آخر تحديث لبيانات العامل',src.profile_updated_at||'لم تُسجل'],
+   ['تسوية الدوام','قيد مطابقة ومراجعة البصمات']
+  ];
+  const registered=[...(src.approved_extras||[]).map(v=>'إضافي '+v.date+' — '+v.task+' — '+money(v.amount)),
+    ...(src.approved_callouts||[]).map(v=>'استدعاء '+v.date+' — '+v.task+' — '+money(v.duration_minutes/60)+' ساعة — '+money(v.amount))];
+  return '<tr><td><strong>'+safe(x.name)+'</strong><div class="muted">'+safe(x.code)+'</div></td>'+
+   '<td>'+money(x.salary.net)+(x.salary.complete?'':'*')+'</td>'+
+   '<td>'+(inc.living===null?'—':money(inc.living))+'</td>'+
+   '<td>'+(inc.experience===null?'—':money(inc.experience))+'</td>'+
+   '<td>'+money(inc.rank+inc.duty)+'</td><td>'+money(inc.evaluation)+'</td>'+
+   '<td>'+money(inc.achievement)+'</td><td>'+money(inc.approved_extra)+'</td>'+
+   '<td>'+money(inc.approved_callouts||0)+'</td>'+
+   '<td><strong>'+money(inc.subtotal_before_attendance)+'</strong></td>'+
+   '<td class="notready">'+(missing?'ناقص: '+safe(missing)+'؛ ':'')+'الدوام قيد المراجعة</td></tr>'+
+   '<tr class="detail-line"><td colspan="11"><details><summary>تتبع أثر المدخلات — '+safe(x.name)+'</summary><div class="detail-values">'+
+   details.map(([k,v])=>'<div>'+safe(k)+': <b>'+safe(v===null?'غير مكتمل':typeof v==='number'?money(v):v)+'</b></div>').join('')+
+   (registered.length?'<div style="grid-column:1/-1">الحركات المعتمدة: '+safe(registered.join(' | '))+'</div>':'')+
+   '</div></details></td></tr>';
+ }).join('')||'<tr><td colspan="11">لا توجد نتائج</td></tr>';
+ $('previewFoot').textContent='مسودة للمراجعة، وليست كشف صرف. النجمة (*) تعني نقص التأمين أو الضريبة. الحافز المعروض قبل تسوية رصيد الدوام وخصومات التأخير، والإضافي والاستدعاء بحد 7,000 ريال للعامل يوميًا.';
 }
 async function loadPreview(){
  const month=$('month').value;

@@ -61,12 +61,13 @@ test('approved extras only, missing salary fields block readiness',()=>{
 });
 
 test('manually entered whole callout hours are priced first 3000, then 1000 each and capped',()=>{
- assert.equal(DAILY_OVERTIME_CAP,7000);
+ assert.equal(DAILY_OVERTIME_CAP,8000);
  assert.equal(calloutPay(1,DEFAULTS),3000);
  assert.equal(calloutPay(2,DEFAULTS),4000);
  assert.equal(calloutPay(4,DEFAULTS),6000);
  assert.equal(calloutPay(5,DEFAULTS),7000);
- assert.throws(()=>calloutPay(6,DEFAULTS),/7,000/);
+ assert.equal(calloutPay(6,DEFAULTS),8000);
+ assert.throws(()=>calloutPay(7,DEFAULTS),/8,000/);
  assert.throws(()=>calloutPay(0,DEFAULTS));
  assert.throws(()=>calloutPay(1.5,DEFAULTS));
 });

@@ -1,4 +1,4 @@
-/* Dawam Muyassar 0.2.31 — clean navigation from the legacy users window.
+/* Dawam Muyassar 0.2.34 — clean navigation from the legacy users window.
  * No nested iframe, competing scrollbar, credential caching, or duplicate form.
  */
 (() => {
@@ -27,7 +27,7 @@
  }
  function editorLink(email){
   const u=new URL('/users-permissions.html',location.origin);
-  u.searchParams.set('v','0.2.31');
+  u.searchParams.set('v','0.2.34');
   if(email)u.searchParams.set('email',email);
   return u.pathname+u.search;
  }

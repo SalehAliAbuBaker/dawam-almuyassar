@@ -39,41 +39,23 @@
     touch.href='/offline-icon.svg';
   }
   function decorateMonthlyLinks(){
-    // One icon per link. Remove icons previously injected by older deployments,
-    // but keep the single native icon when the existing sidebar already provides one.
-    document.querySelectorAll('a[href*="finance-monthly.html"]').forEach(el=>{
-      const wrappers=[...el.querySelectorAll('.dawam-monthly-icon')];
-      const nativeIcons=[...el.querySelectorAll('svg')].filter(svg=>!svg.closest('.dawam-monthly-icon'));
-      if(nativeIcons.length){
-        wrappers.forEach(icon=>icon.remove());
-      }else if(wrappers.length>1){
-        wrappers.slice(1).forEach(icon=>icon.remove());
-      }else if(!wrappers.length){
-        const wrapper=document.createElement('span');
-        wrapper.className='dawam-monthly-icon';
-        wrapper.setAttribute('aria-hidden','true');
-        wrapper.innerHTML=monthlyIcon;
-        el.prepend(wrapper);
-      }
-      el.style.setProperty('font-family',"'Tajawal',Tahoma,Arial,sans-serif");
-      el.style.setProperty('font-size','inherit');
-      el.style.setProperty('font-weight','inherit');
-      el.style.setProperty('text-shadow','none');
-      el.style.setProperty('box-shadow','none');
-      el.style.setProperty('line-height','inherit');
-      el.style.setProperty('letter-spacing','normal');
-      el.style.setProperty('gap','8px');
-    });
+    // Existing menu entries already carry their approved icons. Never inject a second one.
   }
   function consolidateWorkerNavigation(){
-    // Only hide the legacy navigation when the unified profile is available to the same user.
-    if(!canFinance||!document.querySelector('a[href*="finance-monthly.html"]'))return;
-    const item=findMenuNode(['العاملون']);
-    if(!item)return;
-    const row=item.closest('li');
-    const node=row && displayText(row).length<45?row:item;
-    node.style.setProperty('display','none','important');
-    node.setAttribute('data-dawam-consolidated','true');
+    // Staff editing lives in the unified finance/staff profile; avoid a duplicate sidebar entry.
+    if(!canFinance || !document.querySelector('a[href*="finance-monthly.html"]'))return;
+    const roots=[...document.querySelectorAll('aside,nav,[class*="sidebar"],[class*="side-nav"],[class*="side-menu"]')];
+    for(const root of roots){
+      for(const item of root.querySelectorAll('a,button,[role="button"],li,div,span')){
+        if(item.closest('.dawam-finance-entry') || displayText(item)!=='العاملون')continue;
+        if(item.querySelector('a[href*="finance-monthly.html"]'))continue;
+        const parent=item.closest('a,button,[role="button"],li')||item;
+        if(displayText(parent)!=='العاملون')continue;
+        parent.hidden=true;
+        parent.style.setProperty('display','none','important');
+        parent.setAttribute('data-dawam-consolidated','true');
+      }
+    }
   }
   let canFinance=false;
   let financeMonthlyMinutes=375; // Latest approved monthly balance; draft preview until attendance integration.
@@ -154,7 +136,7 @@
     link.style.boxShadow='none';
     link.style.fontFamily="'Tajawal',Tahoma,Arial,sans-serif";
     link.style.fontSize='inherit';
-    link.style.fontWeight='inherit';
+    link.style.fontWeight='600';
     link.style.textShadow='none';
     if(menu){
       const insertAfter=menu.closest('li')||menu;

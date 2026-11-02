@@ -231,32 +231,72 @@ $('saveProfile').addEventListener('click',()=>attempt(async()=>{
  notice('حُفظت بيانات الاستحقاقات للعامل');
  await loadEmployees();$('profileEmployee').value=id;setProfile();if(role!=='hr')await loadPreview();
 }));
+let attendanceRating=null;
 function renderEvaluation(){
- $('evaluationRows').innerHTML=scoreNames.map((name,i)=>'<div class="evaluation-row"><label for="score'+i+'">'+safe(name)+'</label><input type="number" id="score'+i+'" min="0" max="'+caps[i]+'" step="0.5" value="0"><small>من '+caps[i]+'</small></div>').join('');
- caps.forEach((_,i)=>$('score'+i).addEventListener('input',score));
+ $('evaluationRows').innerHTML=scoreNames.map((name,i)=>'<div class="evaluation-row"><label for="score'+i+'">'+safe(name)+' <small>('+caps[i]+' من 100)</small></label><input type="number" id="score'+i+'" min="0" max="100" step="0.01" '+(i===2?'disabled placeholder="من البصمة"':'value="0"')+' title="نسبة التقييم المئوية"><small id="weighted'+i+'">0 من '+caps[i]+'</small></div>').join('');
+ caps.forEach((_,i)=>{if(i!==2)$('score'+i).addEventListener('input',score);});
  score();
 }
 function score(){
- const n=caps.map((cap,i)=>Number($('score'+i).value||0));
- const sum=n.reduce((a,b)=>a+b,0);
- $('scoreTotal').textContent=sum.toLocaleString('en-US')+' / 100';
- $('evaluationMoney').textContent=money(sum*(policy.evaluation_max||15000)/100)+' ريال شهريًا';
+ const values=caps.map((cap,i)=>{
+  if(i===2)return attendanceRating?.approved?Number(attendanceRating.approved.points):null;
+  const v=Number($('score'+i).value);
+  return Number.isFinite(v)&&v>=0&&v<=100?Math.round(cap*v)/100:null;
+ });
+ caps.forEach((cap,i)=>{$('weighted'+i).textContent=(values[i]===null?'بانتظار المراجعة':money(values[i]))+' من '+cap;});
+ const complete=values.every(v=>v!==null),sum=values.reduce((a,v)=>a+(v||0),0);
+ $('scoreTotal').textContent=money(sum)+' / 100'+(complete?'':' (غير مكتمل)');
+ $('evaluationMoney').textContent=complete?money(sum*(policy.evaluation_max||15000)/100)+' ريال شهريًا':'مسودة: لا يعتمد الحافز قبل مراجعة البصمة';
+}
+async function loadAttendanceRating(){
+ const employee_id=$('evaluationEmployee').value,month=$('evaluationMonth').value;
+ attendanceRating=null;$('score2').value='';$('attendanceRatingSummary').textContent='لم تُحمّل بيانات الالتزام بعد';
+ $('attendanceRatingDays').innerHTML='';$('approveAttendanceRating').disabled=true;
+ if(!employee_id||!month){score();return;}
+ const data=await api('attendance-rating?employee_id='+encodeURIComponent(employee_id)+'&month='+encodeURIComponent(month));
+ attendanceRating=data;
+ const p=data.preview,approved=data.approved;
+ $('score2').value=approved?Number(approved.percentage):'';
+ $('attendanceRatingSummary').textContent=approved
+  ?'معتمد إداريًا: '+money(approved.percentage)+'% = '+money(approved.points)+' من 25 درجة، بتاريخ '+approved.approved_at+'.'
+  :'معاينة غير معتمدة: '+(p.percentage===null?'بيانات غير كافية':money(p.percentage)+'% = '+money(p.points)+' من 25')+
+   ' | أيام دون بصمة: '+p.missing_days+' | أيام تحتاج مراجعة: '+p.unresolved_days+' | '+p.review_message;
+ const notable=p.days.filter(d=>d.status!=='complete'&&d.status!=='future');
+ $('attendanceRatingDays').innerHTML='<details><summary>تفاصيل مراجعة الدورة ('+notable.length+' يومًا مميزًا)</summary><p>'+safe(p.cycle.from)+' إلى '+safe(p.cycle.to)+' — الدقائق المطلوبة: '+money(p.scheduled_minutes)+'؛ المسجلة داخل الدوام: '+money(p.worked_minutes)+'؛ الإجازات الكاملة المعتمدة: '+p.excluded_leave_days+'.</p>'+
+ (notable.length?notable.slice(0,45).map(x=>'<div>'+safe(x.date)+' — '+safe({no_scan:'لم تسجل بصمة',needs_review:'تسلسل يحتاج تصحيحًا',leave_needs_review:'إجازة جزئية للمراجعة',approved_leave:'إجازة معتمدة'}[x.status]||x.status)+'</div>').join(''):'لا توجد أيام استثنائية')+'</details>';
+ $('approveAttendanceRating').disabled=role!=='admin'||!p.can_approve||!!approved;
+ score();
 }
 async function loadHistory(){
- const id=$('evaluationEmployee').value;if(!id)return;
+ const id=$('evaluationEmployee').value;if(!id){$('evaluationHistory').textContent='اختر العامل';return;}
  const d=await api('evaluations?employee_id='+encodeURIComponent(id));
  $('evaluationHistory').innerHTML=d.items.length?d.items.map(x=>'<div>'+safe(x.effective_month)+' — '+money(x.scores.reduce((a,b)=>a+b,0))+' درجة من 100</div>').join(''):'لا توجد تقييمات معتمدة';
+ const earlier=d.items.find(x=>x.effective_month<=$('evaluationMonth').value);
+ caps.forEach((cap,i)=>{if(i!==2)$('score'+i).value=earlier?String(Number(earlier.scores[i])*100/cap):'0';});
+ score();
 }
-$('evaluationEmployee').addEventListener('change',()=>attempt(loadHistory));
+$('evaluationEmployee').addEventListener('change',()=>attempt(async()=>{await loadHistory();await loadAttendanceRating();}));
+$('evaluationMonth').addEventListener('change',()=>attempt(async()=>{await loadHistory();await loadAttendanceRating();}));
+$('loadAttendanceRating').addEventListener('click',()=>attempt(loadAttendanceRating));
+$('approveAttendanceRating').addEventListener('click',()=>attempt(async()=>{
+ if(!attendanceRating?.preview?.can_approve||attendanceRating.approved)throw Error('درجة الالتزام غير جاهزة للاعتماد');
+ if(!$('attendanceRatingConfirmed').checked)throw Error('يلزم تأكيد مراجعة حالات الغياب والمزامنة');
+ const note=$('attendanceRatingNote').value.trim();if(note.length<8)throw Error('اكتب ملاحظة واضحة عن مراجعة البصمة');
+ if(!confirm('هل تحققت من البصمات وحالات الغياب والإجازات، وتريد تثبيت هذه النسبة للشهر؟'))return;
+ await api('attendance-rating','POST',{employee_id:$('evaluationEmployee').value,month:$('evaluationMonth').value,confirmed:true,note,review_token:attendanceRating.preview.review_token});
+ await loadAttendanceRating();if(role!=='hr')await loadPreview();
+ notice('اعتمدت نسبة الالتزام لهذا الشهر؛ يمكن الآن اعتماد التقييم كاملًا');
+}));
 $('saveEvaluation').addEventListener('click',()=>attempt(async()=>{
  const employee_id=$('evaluationEmployee').value,effective_month=$('evaluationMonth').value;
  if(!employee_id)throw Error('اختر العامل');
- const scores=caps.map((cap,i)=>Number($('score'+i).value));
- if(scores.some((v,i)=>!Number.isFinite(v)||v<0||v>caps[i]))throw Error('الدرجات تتجاوز الحدود المحددة');
- if(!confirm('هل اعتمدت اللجنة التقييم الجماعي، وتريد حفظ نتيجته لهذا الشهر؟'))return;
- const d=await api('evaluations','POST',{employee_id,effective_month,scores,note:$('evaluationNote').value});
+ if(!attendanceRating?.approved)throw Error('لا بد من اعتماد الالتزام في الدوام من البصمة أولًا');
+ const percentages=caps.map((cap,i)=>i===2?null:Number($('score'+i).value));
+ if(percentages.some((v,i)=>i!==2&&(!Number.isFinite(v)||v<0||v>100)))throw Error('النسب يجب أن تكون بين صفر و100');
+ if(!confirm('هل اعتمدت اللجنة نسب المعايير الستة ونسبة الالتزام المستخرجة من البصمة؟'))return;
+ const d=await api('evaluations','POST',{employee_id,effective_month,percentages,note:$('evaluationNote').value});
  notice('اعتُمد التقييم بمجموع '+d.total_points+' درجة');
- await loadHistory();await loadPreview();
+ await loadHistory();if(role!=='hr')await loadPreview();
 }));
 function renderPolicy(){
  $('policyFields').innerHTML=Object.entries(labels).map(([key,label])=>'<div class="field"><label for="policy_'+key+'">'+safe(label)+'</label><input type="number" min="0" id="policy_'+key+'" value="'+safe(policy[key])+'"></div>').join('');
@@ -290,6 +330,7 @@ function renderPreview(){
    ['صافي الراتب',x.salary.net],['غلاء المعيشة والأسرة',inc.living],
    ['سنوات الخدمة',inc.experience_years],['علاوة الخبرة',inc.experience],['علاوة الرتبة',inc.rank],
    ['ثقل المهمة',inc.duty],['التقييم الشهري',inc.evaluation],
+    ['الالتزام في الدوام (شهر الدورة)',x.attendance_rating?.points===null?'بانتظار مراجعة البصمة':money(x.attendance_rating.points)+' من 25 — '+money(x.attendance_rating.percentage)+'%'],
    ['شهر التقييم المعتمد',src.applied_evaluation_month||'لم يعتمد'],
    ['الإنجاز',inc.achievement],['تعويض ضريبة الكسب',inc.tax_compensation],
    ['المهام الإضافية المعتمدة',inc.approved_extra],['الاستدعاء المعتمد',inc.approved_callouts||0],
@@ -423,7 +464,7 @@ async function start(){
   if(role!=='admin')$('saveEvaluation').disabled=true;
   if(role==='hr'){$('saveProfile').disabled=true;$('refresh').disabled=true;document.querySelector('[data-tab="preview"]').disabled=true;setTab('profiles');}
   else await loadPreview();
-  await loadExtras();await loadCallouts();await loadHistory();refreshExtraLimit();refreshCalloutEstimate();
+  await loadExtras();await loadCallouts();await loadHistory();await loadAttendanceRating();refreshExtraLimit();refreshCalloutEstimate();
  }catch(e){notice(e.message,true);}
 }
 start();

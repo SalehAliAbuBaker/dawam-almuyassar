@@ -63,7 +63,12 @@
     if(!canFinance||document.querySelector('.dawam-finance-entry'))return;
     if([...document.querySelectorAll('a[href]')].some(a=>(a.getAttribute('href')||'').includes('finance-monthly.html')))return;
     const menu=findFinanceMenuItem();
-    if(!menu)return;
+    // Fallback: some editions render the sidebar label in a non-semantic div.
+    // Never hide the entry just because the text matching is imperfect.
+    const sideRoots=[...document.querySelectorAll('aside,nav,[class*="sidebar"],[class*="side-nav"],[class*="side-menu"],[class*="side-panel"]')];
+    const side=sideRoots.filter(x=>isVisible(x)&&/الرواتب/.test(x.textContent||''))
+      .sort((a,b)=>(a.textContent||'').length-(b.textContent||'').length)[0]||null;
+    if(!menu&&!side)return;
     const link=document.createElement('a');
     link.href=financeUrl;
     link.textContent='الحافز الشهري والخصومات';
@@ -78,8 +83,14 @@
     link.style.color='#075c38';
     link.style.boxShadow='none';
     link.style.fontSize='13px';
-    const insertAfter=menu.closest('li')||menu;
-    insertAfter.insertAdjacentElement('afterend',link);
+    if(menu){
+      const insertAfter=menu.closest('li')||menu;
+      insertAfter.insertAdjacentElement('afterend',link);
+    }else{
+      const anchor=[...side.querySelectorAll('a,button,li,[role="button"],div')].find(
+        el=>isVisible(el)&&/الرواتب/.test(displayText(el))&&displayText(el).length<65);
+      (anchor||side).insertAdjacentElement(anchor?'afterend':'beforeend',link);
+    }
   }
   function mountFinanceRule() {
     // This corrects the legacy dashboard label, not the historic permission_minutes field.

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#13734a">
-<title>الاستحقاقات والحافز الشهري | دوام الميسر 0.2.31</title>
+<title>الاستحقاقات والحافز الشهري | دوام الميسر 0.2.32</title>
 <style>
 :root{color-scheme:light;--g:#116b43;--g2:#eaf5ee;--line:#dae7dd;--ink:#17382b;--muted:#60786c;--bg:#f5f8f5;--warn:#8c4e12}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.65 Tahoma,Arial,sans-serif}
@@ -46,7 +46,7 @@ tfoot td{font-weight:700}.kpis{display:flex;gap:12px;flex-wrap:wrap}.kpi{flex:1;
 <body>
 <main>
 <header>
- <div><h1>الاستحقاقات والحافز الشهري</h1><small>دوام الميسر — النسخة التجريبية 0.2.31</small></div>
+ <div><h1>الاستحقاقات والحافز الشهري</h1><small>دوام الميسر — النسخة التجريبية 0.2.32</small></div>
  <a class="button secondary" href="/">العودة إلى التطبيق</a>
 </header>
 <div class="banner"><strong>وضع تجريبي آمن:</strong> الحسابات المعروضة مسودات فقط، ولا تُعتمد للصرف ولا تُغيّر الأرصدة أو سجلات البصمة. تسوية رصيد الدوام وخصومات التأخير ما زالت بانتظار ربط الحضور المعتمد.</div>
@@ -103,9 +103,9 @@ tfoot td{font-weight:700}.kpis{display:flex;gap:12px;flex-wrap:wrap}.kpi{flex:1;
   <h2>نموذج التقييم المعتمد — 100 درجة</h2>
   <div class="grid">
    <div class="field"><label for="evaluationEmployee">العامل</label><select id="evaluationEmployee"></select></div>
-   <div class="field"><label for="evaluationMonth">شهر بدء سريان التقييم</label><input id="evaluationMonth" type="month"></div>
+   <div class="field"><label for="evaluationMonth">شهر بدء سريان التعديلات</label><input id="evaluationMonth" type="month"></div>
   </div>
-  <p class="muted">المعايير السبعة وأوزانها دون تغيير. أدخل نسبة من 0 إلى 100% للمعايير الستة الأخرى؛ «الالتزام في الدوام» (25 درجة) يُحتسب من بصمات الدورة الشهرية وحدها، ولا يُدخل يدويًا. لا تُرحل درجة التزام شهر سابق إلى الشهر الجديد.</p>
+  <p class="muted">معايير التقييم وأوزانها كما هي. تبقى نسب اللجنة الستة محفوظة وسارية حتى تعديلها وحفظ التغيير، دون إدخال شهري جديد. «الالتزام في الدوام» (25 درجة) يُحسب من البصمة شهريًا بشكل مستقل، ولا يُدخل يدويًا.</p>
   <div class="card" style="box-shadow:none">
    <h3>معاينة الالتزام في الدوام من البصمة</h3>
    <p id="attendanceRatingSummary" class="muted">اختر العامل والشهر لعرض نسبة البصمة.</p>
@@ -120,8 +120,8 @@ tfoot td{font-weight:700}.kpis{display:flex;gap:12px;flex-wrap:wrap}.kpi{flex:1;
    <div class="field"><label for="evaluationNote">ملاحظات اللجنة</label><textarea id="evaluationNote" rows="2"></textarea></div>
    <div class="field"><label>نتيجة التقييم</label><div class="kpi"><strong id="scoreTotal">0 / 100</strong><span id="evaluationMoney">0 ريال شهريًا</span></div></div>
   </div>
-  <div class="actions"><button id="saveEvaluation">اعتماد التقييم الحالي</button></div>
-  <h3>التقييمات السابقة</h3><div id="evaluationHistory" class="muted"></div>
+  <div class="actions"><button id="saveEvaluation" type="button" disabled>حفظ التعديلات</button><button id="undoEvaluation" class="secondary" type="button">إلغاء التعديلات</button><small id="evaluationSaveState" role="status">آخر تقييم محفوظ ساري حتى تعديله.</small></div>
+  <h3>سجل تقييمات اللجنة المحفوظة</h3><div id="evaluationHistory" class="muted"></div>
  </div>
 </section>
 
@@ -186,7 +186,7 @@ const labels={
  evaluation_max:'الحد الأعلى للتقييم',allowed_minutes:'الرصيد الشهري بالدقائق',period_divisor:'مقسوم الراتب بالأيام',workday_minutes:'الدقائق المرجعية اليومية',
  callout_first_hour:'الاستدعاء: الساعة الأولى',callout_additional_hour:'الاستدعاء: كل ساعة تالية'
 };
-const scoreNames=['الاهتمام بالمظهر','اللغة السليمة عند التعامل مع الجميع','الالتزام في الدوام','تطوير أساليب العمل والتغلب على الصعوبات','أداء العمل على أحسن وأكمل وجه','التطوع بساعتين يوميًا أو ما يعادلها','تأثير العمل في المؤسسة على غيره'];
+const scoreNames=['الاهتمام بالمظهر','اللغة السليمة عند التعامل مع الجميع','الالتزام في الدوام','تطوير أساليب العمل والتغلب على الصعوبات','أداء العمل على أحسن وأكمل وجه','التطوع بساعتين يوميًا أو ما يعادلها','إيثار العمل في المؤسسة على غيره'];
 const caps=[2,8,25,15,20,20,10],money=n=>Number(n||0).toLocaleString('en-US',{maximumFractionDigits:2});
 const safe=t=>String(t==null?'':t).replace(/[&<>"']/g,s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
 function notice(message,bad){
@@ -232,9 +232,29 @@ $('saveProfile').addEventListener('click',()=>attempt(async()=>{
  await loadEmployees();$('profileEmployee').value=id;setProfile();if(role!=='hr')await loadPreview();
 }));
 let attendanceRating=null;
+let evaluationBaseline=null,shownEvalEmployee='',shownEvalMonth='';
+function evaluationInput(){
+ return {percentages:caps.map((_,i)=>i===2?null:Number($('score'+i).value)),note:$('evaluationNote').value};
+}
+function hasUnsavedEvaluation(){
+ if(!evaluationBaseline)return false;
+ const v=evaluationInput();
+ return v.note!==evaluationBaseline.note||v.percentages.some((n,i)=>i!==2&&n!==evaluationBaseline.percentages[i]);
+}
+function updateSaveEvaluation(){
+ const dirty=hasUnsavedEvaluation();
+ $('saveEvaluation').disabled=role!=='admin'||!dirty;
+ $('undoEvaluation').disabled=!dirty;
+ const state=$('evaluationSaveState');
+ if(dirty)state.textContent='توجد تغييرات غير محفوظة؛ اضغط «حفظ التعديلات» لتطبيقها.';
+ else if(evaluationBaseline)state.textContent=evaluationBaseline.source
+   ?'التقييم محفوظ منذ '+evaluationBaseline.source+' وساري حتى حفظ تعديل جديد.'
+   :'لم يُحفظ تقييم سابق لهذا العامل؛ أدخل النسب واحفظها مرة واحدة.';
+}
 function renderEvaluation(){
  $('evaluationRows').innerHTML=scoreNames.map((name,i)=>'<div class="evaluation-row"><label for="score'+i+'">'+safe(name)+' <small>('+caps[i]+' من 100)</small></label><input type="number" id="score'+i+'" min="0" max="100" step="0.01" '+(i===2?'disabled placeholder="من البصمة"':'value="0"')+' title="نسبة التقييم المئوية"><small id="weighted'+i+'">0 من '+caps[i]+'</small></div>').join('');
  caps.forEach((_,i)=>{if(i!==2)$('score'+i).addEventListener('input',score);});
+ $('evaluationNote').addEventListener('input',updateSaveEvaluation);
  score();
 }
 function score(){
@@ -247,6 +267,7 @@ function score(){
  const complete=values.every(v=>v!==null),sum=values.reduce((a,v)=>a+(v||0),0);
  $('scoreTotal').textContent=money(sum)+' / 100'+(complete?'':' (غير مكتمل)');
  $('evaluationMoney').textContent=complete?money(sum*(policy.evaluation_max||15000)/100)+' ريال شهريًا':'مسودة: لا يعتمد الحافز قبل مراجعة البصمة';
+ updateSaveEvaluation();
 }
 async function loadAttendanceRating(){
  const employee_id=$('evaluationEmployee').value,month=$('evaluationMonth').value;
@@ -268,15 +289,27 @@ async function loadAttendanceRating(){
  score();
 }
 async function loadHistory(){
- const id=$('evaluationEmployee').value;if(!id){$('evaluationHistory').textContent='اختر العامل';return;}
+ const id=$('evaluationEmployee').value,month=$('evaluationMonth').value;
+ if(!id){$('evaluationHistory').textContent='اختر العامل';evaluationBaseline=null;updateSaveEvaluation();return;}
  const d=await api('evaluations?employee_id='+encodeURIComponent(id));
- $('evaluationHistory').innerHTML=d.items.length?d.items.map(x=>'<div>'+safe(x.effective_month)+' — '+money(x.scores.reduce((a,b)=>a+b,0))+' درجة من 100</div>').join(''):'لا توجد تقييمات معتمدة';
- const earlier=d.items.find(x=>x.effective_month<=$('evaluationMonth').value);
- caps.forEach((cap,i)=>{if(i!==2)$('score'+i).value=earlier?String(Number(earlier.scores[i])*100/cap):'0';});
+ $('evaluationHistory').innerHTML=d.items.length?d.items.map(x=>'<div>'+safe(x.effective_month)+' — '+money(x.scores.reduce((a,b,i)=>a+(i===2?0:b),0))+' من 75 درجة للجنة</div>').join(''):'لا توجد تقييمات محفوظة';
+ const earlier=d.items.find(x=>x.effective_month<=month);
+ caps.forEach((cap,i)=>{if(i!==2)$('score'+i).value=earlier?String(Number((Number(earlier.scores[i])*100/cap).toFixed(2))):'0';});
+ $('evaluationNote').value=earlier?.note||'';
+ evaluationBaseline={...evaluationInput(),source:earlier?.effective_month||null};
+ shownEvalEmployee=id;shownEvalMonth=month;
  score();
 }
-$('evaluationEmployee').addEventListener('change',()=>attempt(async()=>{await loadHistory();await loadAttendanceRating();}));
-$('evaluationMonth').addEventListener('change',()=>attempt(async()=>{await loadHistory();await loadAttendanceRating();}));
+async function switchEvaluation(){
+ if(hasUnsavedEvaluation()&&!confirm('توجد تغييرات لم تُحفظ. هل تريد الانتقال دون حفظها؟')){
+  $('evaluationEmployee').value=shownEvalEmployee;$('evaluationMonth').value=shownEvalMonth;return;
+ }
+ await loadHistory();await loadAttendanceRating();
+}
+$('evaluationEmployee').addEventListener('change',()=>attempt(switchEvaluation));
+$('evaluationMonth').addEventListener('change',()=>attempt(switchEvaluation));
+$('undoEvaluation').addEventListener('click',()=>attempt(loadHistory));
+window.addEventListener('beforeunload',event=>{if(hasUnsavedEvaluation()){event.preventDefault();event.returnValue='';}});
 $('loadAttendanceRating').addEventListener('click',()=>attempt(loadAttendanceRating));
 $('approveAttendanceRating').addEventListener('click',()=>attempt(async()=>{
  if(!attendanceRating?.preview?.can_approve||attendanceRating.approved)throw Error('درجة الالتزام غير جاهزة للاعتماد');
@@ -285,18 +318,18 @@ $('approveAttendanceRating').addEventListener('click',()=>attempt(async()=>{
  if(!confirm('هل تحققت من البصمات وحالات الغياب والإجازات، وتريد تثبيت هذه النسبة للشهر؟'))return;
  await api('attendance-rating','POST',{employee_id:$('evaluationEmployee').value,month:$('evaluationMonth').value,confirmed:true,note,review_token:attendanceRating.preview.review_token});
  await loadAttendanceRating();if(role!=='hr')await loadPreview();
- notice('اعتمدت نسبة الالتزام لهذا الشهر؛ يمكن الآن اعتماد التقييم كاملًا');
+ notice('اعتمدت نسبة الالتزام لهذا الشهر؛ تقييم اللجنة المحفوظ مستمر دون حاجة إلى إعادة إدخاله');
 }));
 $('saveEvaluation').addEventListener('click',()=>attempt(async()=>{
  const employee_id=$('evaluationEmployee').value,effective_month=$('evaluationMonth').value;
  if(!employee_id)throw Error('اختر العامل');
- if(!attendanceRating?.approved)throw Error('لا بد من اعتماد الالتزام في الدوام من البصمة أولًا');
- const percentages=caps.map((cap,i)=>i===2?null:Number($('score'+i).value));
+ if(!hasUnsavedEvaluation())return;
+ const percentages=evaluationInput().percentages;
  if(percentages.some((v,i)=>i!==2&&(!Number.isFinite(v)||v<0||v>100)))throw Error('النسب يجب أن تكون بين صفر و100');
- if(!confirm('هل اعتمدت اللجنة نسب المعايير الستة ونسبة الالتزام المستخرجة من البصمة؟'))return;
+ if(!confirm('حفظ التغييرات لهذا العامل اعتبارًا من '+effective_month+'؟ سيبقى التقييم ساريًا حتى تعديله لاحقًا.'))return;
  const d=await api('evaluations','POST',{employee_id,effective_month,percentages,note:$('evaluationNote').value});
- notice('اعتُمد التقييم بمجموع '+d.total_points+' درجة');
  await loadHistory();if(role!=='hr')await loadPreview();
+ notice(d.changed?'حُفظت تغييرات تقييم اللجنة بنجاح ('+money(d.total_points)+' من 75 درجة)':'لا توجد تغييرات جديدة على التقييم المحفوظ');
 }));
 function renderPolicy(){
  $('policyFields').innerHTML=Object.entries(labels).map(([key,label])=>'<div class="field"><label for="policy_'+key+'">'+safe(label)+'</label><input type="number" min="0" id="policy_'+key+'" value="'+safe(policy[key])+'"></div>').join('');

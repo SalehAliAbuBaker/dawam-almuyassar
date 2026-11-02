@@ -67,7 +67,8 @@ test('manually entered whole callout hours are priced first 3000, then 1000 each
  assert.equal(calloutPay(4,DEFAULTS),6000);
  assert.equal(calloutPay(5,DEFAULTS),7000);
  assert.equal(calloutPay(6,DEFAULTS),8000);
- assert.throws(()=>calloutPay(7,DEFAULTS),/8,000/);
+ assert.equal(calloutPay(7,DEFAULTS),8000);
+ assert.equal(calloutPay(10,DEFAULTS),8000);
  assert.throws(()=>calloutPay(0,DEFAULTS));
  assert.throws(()=>calloutPay(1.5,DEFAULTS));
 });

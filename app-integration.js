@@ -1,4 +1,4 @@
-/* Dawam 0.2.27 — non-invasive admin and personal attendance navigation.
+/* Dawam 0.2.28 — non-invasive admin and personal attendance navigation.
    No access tokens, employee data, or passwords are stored by this script. */
 (() => {
   'use strict';
@@ -7,9 +7,10 @@
   const deviceSyncUrl='/mb10-sync.html';
   const financeUrl='/finance-monthly.html';
   let canFinance=false;
+  let financeMonthlyMinutes=375; // Latest approved monthly balance; draft preview until attendance integration.
   let isAdmin=false, canSync=false, hasPersonal=false, checking=false, mounting=false;
   const style='display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 14px;border-radius:10px;background:#167a4d;color:white;text-decoration:none;font:600 14px Tahoma,Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.12);max-width:100%;';
-  const htmlLabel=label+' — 0.2.27';
+  const htmlLabel=label+' — 0.2.28';
 
   function makeLink() {
     const el=document.createElement('a');
@@ -38,23 +39,78 @@
     link.style.boxShadow='none';
     attendance.insertAdjacentElement('afterend',link);
   }
+  function findFinanceMenuItem(){
+    // The legacy sidebar has been rendered both as buttons and as non-button menu rows.
+    // Match just the short payroll label, never a whole sidebar's concatenated text.
+    const names=['الرواتب والمكافآت','الرواتب والمكافئات','الرواتب','الرواتب والحوافز'];
+    const roots=[...document.querySelectorAll('aside,nav,[class*="sidebar"],[class*="side-nav"],[class*="side-menu"]')]
+      .filter(isVisible);
+    for(const root of roots){
+      const candidates=root.querySelectorAll('a,button,[role="button"],li,span,div');
+      for(const el of candidates){
+        if(!isVisible(el)||el.classList.contains('dawam-finance-entry'))continue;
+        const value=displayText(el);
+        if(value.length>65||!names.some(name=>value===name||value.endsWith(' '+name)||value.startsWith(name+' ')))continue;
+        // Prefer the actual tappable row, or its li wrapper, over an inner label.
+        const row=el.closest('a,button,[role="button"],li')||el;
+        if(!root.contains(row))continue;
+        return row;
+      }
+    }
+    return null;
+  }
   function mountFinance() {
     if(!canFinance||document.querySelector('.dawam-finance-entry'))return;
     if([...document.querySelectorAll('a[href]')].some(a=>(a.getAttribute('href')||'').includes('finance-monthly.html')))return;
-    const menu=findMenuNode(['الرواتب والمكافآت','الرواتب والمكافئات','الرواتب','الرواتب والحوافز']);
+    const menu=findFinanceMenuItem();
     if(!menu)return;
     const link=document.createElement('a');
     link.href=financeUrl;
     link.textContent='الحافز الشهري والخصومات';
     link.className='dawam-finance-entry';
+    link.setAttribute('aria-label','فتح الحافز الشهري والخصومات');
     link.style.cssText=style;
     link.style.display='flex';
-    link.style.width='fit-content';
-    link.style.margin='6px 18px 10px 0';
+    link.style.width='calc(100% - 26px)';
+    link.style.margin='5px 13px 8px';
+    link.style.padding='9px 12px';
     link.style.background='#e9f4eb';
     link.style.color='#075c38';
     link.style.boxShadow='none';
-    menu.insertAdjacentElement('afterend',link);
+    link.style.fontSize='13px';
+    const insertAfter=menu.closest('li')||menu;
+    insertAfter.insertAdjacentElement('afterend',link);
+  }
+  function mountFinanceRule() {
+    // This corrects the legacy dashboard label, not the historic permission_minutes field.
+    // No payroll deduction is posted by this display-only bridge.
+    const labels=document.querySelectorAll('span,small,dt,th,td,div');
+    for(const label of labels){
+      if(!label.isConnected||!isVisible(label)||displayText(label)!=='الاستئذان المدفوع')continue;
+      const parent=label.parentElement;
+      if(!parent)continue;
+      const siblings=[...parent.children].filter(el=>el!==label&&isVisible(el));
+      const value=siblings.find(el=>/دقيقة|دقائق/.test(displayText(el))&&displayText(el).length<55);
+      if(!value)continue;
+      label.textContent='رصيد تسوية الدوام';
+      value.textContent=financeMonthlyMinutes.toLocaleString('en-US')+' دقيقة شهريًا';
+      label.title='يشمل التأخير والخروج المبكر والاستعذار وفق القواعد المعتمدة';
+      value.title='هذه سياسة الحافز الجديدة؛ الاحتساب المالي النهائي قيد الاختبار';
+      break;
+    }
+  }
+  async function readFinanceMonthlyBalance(){
+    if(!canFinance)return;
+    try{
+      const resp=await fetch('/api/finance/policy',{credentials:'same-origin',cache:'no-store'});
+      if(!resp.ok)return;
+      const data=await resp.json();
+      const minutes=Number(data?.policy?.allowed_minutes);
+      if(Number.isInteger(minutes)&&minutes>=0&&minutes<=10000){
+        financeMonthlyMinutes=minutes;
+        mountFinanceRule();
+      }
+    }catch(_){}
   }
   function mountPersonal() {
     if(!hasPersonal || document.querySelector('.dawam-my-attendance-entry'))return;
@@ -77,7 +133,7 @@
   }
   // Keep the visible stage version consistent without rewriting the 2.9 MB application file.
   function mountVersion(){
-    const version='0.2.27';
+    const version='0.2.28';
     const outdated=/0\.2\.(?:12|15|16|17|18|19|20|21|22|23|24|25|26)/g;
     const title=document.title.replace(outdated,version);
     if(title!==document.title)document.title=title;
@@ -163,7 +219,8 @@
       if(!canSync)document.querySelectorAll('.dawam-device-sync-entry').forEach(el=>el.remove());
       else mountDeviceSync();
       if(!canFinance)document.querySelectorAll('.dawam-finance-entry').forEach(el=>el.remove());
-      else mountFinance();
+      else {mountFinance();readFinanceMonthlyBalance();}
+      mountFinanceRule();
       if(!hasPersonal)document.querySelectorAll('.dawam-my-attendance-entry').forEach(el=>el.remove());
       else mountPersonal();
     } catch(_) {
@@ -173,6 +230,7 @@
   }
   const observer=new MutationObserver(() => {
     mountVersion();
+    mountFinanceRule();
     if(isAdmin && !mounting && !document.querySelector('.dawam-permissions-entry')) {
       requestAnimationFrame(mount);
     }
@@ -189,7 +247,7 @@
   function loadEmbeddedUserEditor(){
     if(document.querySelector('script[data-dawam-user-modal]'))return;
     const script=document.createElement('script');
-    script.src='/user-management-modal.js?v=0.2.27';
+    script.src='/user-management-modal.js?v=0.2.28';
     script.defer=true;
     script.dataset.dawamUserModal='1';
     document.head.append(script);
@@ -198,6 +256,7 @@
     loadEmbeddedUserEditor();
     observer.observe(document.body,{childList:true,subtree:true});
     mountVersion();
+    mountFinanceRule();
     refreshIdentity();
     // Recheck after in-page login and whenever the tab becomes active.
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshIdentity()});

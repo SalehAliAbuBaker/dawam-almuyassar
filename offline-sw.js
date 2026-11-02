@@ -1,7 +1,7 @@
 /* دوام الميسر — cache only the offline attendance shell.
    Never cache /api responses, session credentials, employee data or payroll. */
-const CACHE='dawam-offline-shell-v3';
-const SHELL=['/offline.html','/offline.webmanifest','/offline-icon.svg'];
+const CACHE='dawam-offline-shell-v4';
+const SHELL=['/offline.html','/offline.webmanifest','/offline-icon.svg','/app-icon-192.png'];
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()));
 });

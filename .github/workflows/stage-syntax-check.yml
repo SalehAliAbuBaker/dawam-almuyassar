@@ -22,9 +22,11 @@ jobs:
           node --check "lib/push-web.js"
           node --check "lib/push-alerts.js"
           node --check "lib/finance-module.js"
+          node --check "lib/monthly-attendance-evaluation.js"
+          node --check "lib/monthly-attendance-server.js"
           node --check "offline-sw.js"
           python3 -m py_compile tools/mb10_sync.py
-          node --test tests/push-web.test.mjs tests/finance-core.test.mjs
+          node --test tests/push-web.test.mjs tests/finance-core.test.mjs tests/monthly-attendance-evaluation.test.mjs
           python3 tests/finance_daily_cap_test.py
           python3 - <<'PY'
           from html.parser import HTMLParser

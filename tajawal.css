@@ -1,0 +1,4 @@
+/* Dawam Muyassar typography: Tajawal — preserves existing size hierarchy. */
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;600;700;800&display=swap');
+:root{--dawam-font:'Tajawal',Tahoma,Arial,sans-serif}
+html,body,button,input,select,textarea,option,table,th,td,summary,dialog{font-family:var(--dawam-font)!important}

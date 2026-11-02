@@ -5,9 +5,9 @@
 <meta name="theme-color" content="#13734a">
 <title>الاستحقاقات والحافز الشهري | دوام الميسر 0.2.32</title>
 <style>
-:root{--dawam-font:Tahoma,Arial,sans-serif;}
+:root{--dawam-font:'Tajawal',Tahoma,Arial,sans-serif;}
 :root{color-scheme:light;--g:#116b43;--g2:#eaf5ee;--line:#dae7dd;--ink:#17382b;--muted:#60786c;--bg:#f5f8f5;--warn:#8c4e12}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.65 Tahoma,Arial,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.65 var(--dawam-font)}
 main{max-width:1480px;margin:auto;padding:18px 14px 70px}body.wide-mode main{max-width:none;width:100%;padding-inline:10px}
 h1{font-size:23px;margin:0}h2{font-size:17px;margin:0 0 12px}h3{font-size:15px;margin:8px 0}
 header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
@@ -30,7 +30,7 @@ tfoot td{font-weight:700}.kpis{display:flex;gap:12px;flex-wrap:wrap}.kpi{flex:1;
 @page{size:A4 landscape;margin:8mm}
 @media print{
  .tabs,.actions,header a,#message,.no-print,#query{display:none!important}
- body{background:white;color:black;font:10px/1.35 Tahoma,Arial,sans-serif}
+ body{background:white;color:black;font:10px/1.35 var(--dawam-font)}
  main,body.wide-mode main{padding:0;max-width:none;width:100%}
  .panel{display:none!important}#preview{display:block!important}
  header{margin:0 0 8px}h1{font-size:16px}
@@ -43,7 +43,8 @@ tfoot td{font-weight:700}.kpis{display:flex;gap:12px;flex-wrap:wrap}.kpi{flex:1;
 }
 
 </style>
-<link rel="stylesheet" href="/tajawal.css">\n</head>
+<link rel="stylesheet" href="/tajawal.css">
+</head>
 <body>
 <main>
 <header>
@@ -81,7 +82,7 @@ tfoot td{font-weight:700}.kpis{display:flex;gap:12px;flex-wrap:wrap}.kpi{flex:1;
 <section id="profiles" class="panel">
  <div class="card">
   <h2>بيانات العامل المؤثرة في الاستحقاق</h2>
-  <p class="muted">هذه البيانات مستقلة عن البصمات والأسماء الأصلية. لا تُنقل أي مبالغ من PDF تلقائيًا دون مراجعة.</p>
+  <p class="muted">ملف موحّد لبيانات العامل المرتبطة بالحضور والاستحقاقات. تُظهر الشاشة حقلًا واحدًا للراتب والمواصلات بحسب المصدر المعتمد لكل عامل، وتبقى القيم السابقة محفوظة.</p>
   <div class="field"><label for="profileEmployee">العامل</label><select id="profileEmployee"></select></div>
   <div class="card" style="box-shadow:none;margin-top:12px">
    <div class="actions"><h3 style="margin:0">البيانات الوظيفية الأساسية</h3><button class="secondary" type="button" id="newWorker">إضافة عامل جديد</button></div>
@@ -249,6 +250,15 @@ function displayWorker(){
   workerTransport:e?.transport_allowance??0,workerDaily:e?.daily_incentive??0,workerEvening:e?.evening_amount??0};
  Object.entries(fields).forEach(([id,value])=>field(id,value));
  const editable=role==='admin'||role==='hr';
+ const p=employees.find(x=>x.id===id)?.profile||{};
+ // Show only one editable field per monetary category; existing overrides remain intact.
+ for(const [baseId,overrideId,hasOverride] of [
+  ['workerSalary','sal',p.salary_override!==null&&p.salary_override!==undefined],
+  ['workerTransport','transport',p.transport_override!==null&&p.transport_override!==undefined]]){
+  $(baseId).closest('.field').classList.toggle('hide',hasOverride);
+  $(overrideId).closest('.field').classList.toggle('hide',!hasOverride);
+  $(overrideId).disabled=role!=='admin';
+ }
  document.querySelectorAll('#workerFields input,#workerFields select,#workerFields textarea').forEach(el=>el.disabled=!editable);
  $('saveWorker').disabled=!editable;$('newWorker').disabled=!editable;
  $('saveWorker').textContent=newWorkerMode?'حفظ عامل جديد':'حفظ بيانات العامل';
@@ -564,6 +574,7 @@ async function start(){
   if(role!=='admin')$('saveEvaluation').disabled=true;
   if(role==='hr'){$('saveProfile').disabled=true;$('refresh').disabled=true;document.querySelector('[data-tab="preview"]').disabled=true;setTab('profiles');}
   else await loadPreview();
+  if(location.hash==='#profiles')setTab('profiles');
   await loadExtras();await loadCallouts();await loadHistory();await loadAttendanceRating();refreshExtraLimit();refreshCalloutEstimate();
  }catch(e){notice(e.message,true);}
 }

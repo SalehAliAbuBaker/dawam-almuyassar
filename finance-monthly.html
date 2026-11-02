@@ -220,7 +220,7 @@ $('saveProfile').addEventListener('click',()=>attempt(async()=>{
   total_insurance:nullable('totalIns'),income_tax:nullable('tax'),achievement_bonus:Number(val('achievement')||0)
  }});
  notice('حُفظت بيانات الاستحقاقات للعامل');
- await loadEmployees();$('profileEmployee').value=id;setProfile();
+ await loadEmployees();$('profileEmployee').value=id;setProfile();if(role!=='hr')await loadPreview();
 }));
 function renderEvaluation(){
  $('evaluationRows').innerHTML=scoreNames.map((name,i)=>'<div class="evaluation-row"><label for="score'+i+'">'+safe(name)+'</label><input type="number" id="score'+i+'" min="0" max="'+caps[i]+'" step="0.5" value="0"><small>من '+caps[i]+'</small></div>').join('');
@@ -357,16 +357,17 @@ function refreshCalloutEstimate(){
 $('calloutHours').addEventListener('input',refreshCalloutEstimate);
 async function loadCallouts(){
  const month=$('month').value;if(!month)return;
- const d=await api('callouts?month='+encodeURIComponent(month));
+ const d=await api('callouts?month='+encodeURIComponent(month));calloutItems=d.items||[];
  $('calloutsBody').innerHTML=d.items.map(x=>
  '<tr><td>'+safe(x.employee_name)+'</td><td>'+safe(x.work_date)+'</td><td>'+safe(x.task)+'</td><td>'+money(x.hours)+'</td><td>'+money(x.amount)+'</td>'+
  '<td>'+safe(x.status==='pending'?'بانتظار الاعتماد':x.status==='approved'?'معتمد':'مرفوض')+'</td>'+
  '<td>'+(x.status==='pending'&&['admin','accountant'].includes(role)?'<button type="button" data-callout="'+safe(x.id)+'" data-decision="approved">اعتماد</button> <button class="secondary" type="button" data-callout="'+safe(x.id)+'" data-decision="rejected">رفض</button>':'—')+'</td></tr>'
  ).join('')||'<tr><td colspan="7">لا توجد استدعاءات مسجلة في هذه الدورة</td></tr>';
+ refreshCalloutEstimate();refreshExtraLimit();
  document.querySelectorAll('[data-callout]').forEach(b=>b.addEventListener('click',()=>attempt(async()=>{
    if(!confirm('هل تعتمد قرار الاستدعاء المحدد؟'))return;
    await api('callouts/'+encodeURIComponent(b.dataset.callout)+'/decision','POST',{status:b.dataset.decision});
-   await loadCallouts();if(role!=='hr')await loadPreview();notice('تم حفظ قرار الاستدعاء');
+   await loadCallouts();await loadExtras();if(role!=='hr')await loadPreview();notice('تم حفظ قرار الاستدعاء');
  })));
 }
 $('saveCallout').addEventListener('click',()=>attempt(async()=>{
@@ -375,12 +376,13 @@ $('saveCallout').addEventListener('click',()=>attempt(async()=>{
  const hours=Number($('calloutHours').value);
  if(!Number.isInteger(hours)||hours<1||hours>23)throw Error('أدخل عدد الساعات يدويًا من 1 إلى 23');
  const res=await api('callouts','POST',{employee_id,work_date:$('calloutDate').value,task:$('calloutTask').value,hours});
- $('calloutTask').value='';await loadCallouts();
+ $('calloutTask').value='';await loadCallouts();if(role!=='hr')await loadPreview();
  notice('سُجّل الاستدعاء بقيمة '+money(res.amount)+' ريال، بانتظار الاعتماد');
 }));
 async function loadExtras(){
  const month=$('month').value;if(!month)return;
- const d=await api('extras?month='+encodeURIComponent(month));extraItems=d.items;
+ const d=await api('extras?month='+encodeURIComponent(month));extraItems=d.items||[];
+ refreshCalloutEstimate();refreshExtraLimit();
  $('extrasBody').innerHTML=extraItems.map(x=>
  '<tr><td>'+safe(x.employee_name)+'</td><td>'+safe(x.work_date)+'</td><td>'+safe(x.task)+'</td><td>'+money(x.amount)+'</td>'+
  '<td>'+safe(x.status==='pending'?'بانتظار الاعتماد':x.status==='approved'?'معتمد':'مرفوض')+'</td>'+
@@ -388,13 +390,13 @@ async function loadExtras(){
  document.querySelectorAll('[data-extra]').forEach(b=>b.addEventListener('click',()=>attempt(async()=>{
   if(!confirm('تأكيد قرار العمل الإضافي؟'))return;
   await api('extras/'+encodeURIComponent(b.dataset.extra)+'/decision','POST',{status:b.dataset.decision});
-  await loadExtras();await loadPreview();notice('تم حفظ القرار');
+  await loadExtras();await loadCallouts();if(role!=='hr')await loadPreview();notice('تم حفظ القرار');
  })));
 }
 $('saveExtra').addEventListener('click',()=>attempt(async()=>{
  const employee_id=$('extraEmployee').value;if(!employee_id)throw Error('اختر العامل');
  await api('extras','POST',{employee_id,work_date:$('extraDate').value,task:$('extraTask').value,amount:Number($('extraAmount').value)});
- $('extraTask').value='';await loadExtras();notice('سُجلت المهمة بانتظار الاعتماد');
+ $('extraTask').value='';await loadExtras();await loadCallouts();if(role!=='hr')await loadPreview();notice('سُجلت المهمة بانتظار الاعتماد');
 }));
 $('month').addEventListener('change',()=>attempt(async()=>{if(role!=='hr')await loadPreview();await loadExtras();await loadCallouts();}));
 async function start(){
@@ -412,7 +414,7 @@ async function start(){
   if(role!=='admin')$('saveEvaluation').disabled=true;
   if(role==='hr'){$('saveProfile').disabled=true;$('refresh').disabled=true;document.querySelector('[data-tab="preview"]').disabled=true;setTab('profiles');}
   else await loadPreview();
-  await loadExtras();await loadCallouts();await loadHistory();
+  await loadExtras();await loadCallouts();await loadHistory();refreshExtraLimit();refreshCalloutEstimate();
  }catch(e){notice(e.message,true);}
 }
 start();

@@ -5,6 +5,7 @@
 <meta name="theme-color" content="#13734a">
 <title>الاستحقاقات والحافز الشهري | دوام الميسر 0.2.32</title>
 <style>
+:root{--dawam-font:Tahoma,Arial,sans-serif;}
 :root{color-scheme:light;--g:#116b43;--g2:#eaf5ee;--line:#dae7dd;--ink:#17382b;--muted:#60786c;--bg:#f5f8f5;--warn:#8c4e12}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.65 Tahoma,Arial,sans-serif}
 main{max-width:1480px;margin:auto;padding:18px 14px 70px}body.wide-mode main{max-width:none;width:100%;padding-inline:10px}
@@ -82,6 +83,25 @@ tfoot td{font-weight:700}.kpis{display:flex;gap:12px;flex-wrap:wrap}.kpi{flex:1;
   <h2>بيانات العامل المؤثرة في الاستحقاق</h2>
   <p class="muted">هذه البيانات مستقلة عن البصمات والأسماء الأصلية. لا تُنقل أي مبالغ من PDF تلقائيًا دون مراجعة.</p>
   <div class="field"><label for="profileEmployee">العامل</label><select id="profileEmployee"></select></div>
+  <div class="card" style="box-shadow:none;margin-top:12px">
+   <div class="actions"><h3 style="margin:0">البيانات الوظيفية الأساسية</h3><button class="secondary" type="button" id="newWorker">إضافة عامل جديد</button></div>
+   <p class="muted">مكان واحد لإدارة بيانات العامل الوظيفية والمالية. لا تُحذف أي سجلات، وتنعكس التعديلات على الحضور والتقارير.</p>
+   <div class="grid" id="workerFields">
+    <div class="field"><label for="workerCode">الرقم الوظيفي</label><input id="workerCode" maxlength="40"></div>
+    <div class="field"><label for="workerName">اسم العامل</label><input id="workerName" maxlength="140"></div>
+    <div class="field"><label for="workerDevice">رقم البصمة</label><input id="workerDevice" maxlength="40"></div>
+    <div class="field"><label for="workerDepartment">القسم</label><input id="workerDepartment" maxlength="90"></div>
+    <div class="field"><label for="workerPosition">الوظيفة</label><input id="workerPosition" maxlength="90"></div>
+    <div class="field"><label for="workerType">نوع التعاقد</label><select id="workerType"><option value="regular">منتظم</option><option value="trial">تجريبي</option><option value="task">حسب المهمة</option></select></div>
+    <div class="field"><label for="workerStatus">الحالة</label><select id="workerStatus"><option value="active">نشط</option><option value="inactive">غير نشط</option></select></div>
+    <div class="field"><label for="workerSalary">الراتب الأساسي</label><input id="workerSalary" type="number" min="0"></div>
+    <div class="field"><label for="workerTransport">بدل المواصلات</label><input id="workerTransport" type="number" min="0"></div>
+    <div class="field"><label for="workerDaily">الحافز اليومي المسجل</label><input id="workerDaily" type="number" min="0"></div>
+    <div class="field"><label for="workerEvening">مقابل العمل المسائي المسجل</label><input id="workerEvening" type="number" min="0"></div>
+    <div class="field"><label for="workerNotes">ملاحظات العامل</label><textarea id="workerNotes" rows="2"></textarea></div>
+   </div>
+   <div class="actions"><button id="saveWorker" type="button">حفظ بيانات العامل</button><button id="undoWorker" type="button" class="secondary">إلغاء تعديل البيانات الوظيفية</button></div>
+  </div>
   <div class="grid" style="margin-top:12px">
    <div class="field"><label for="hire">تاريخ الالتحاق</label><input id="hire" type="date"></div>
    <div class="field"><label for="family">عدد أفراد الأسرة المستحقين</label><input id="family" type="number" min="0" max="100" placeholder="لم يُحدد"></div>
@@ -175,7 +195,7 @@ tfoot td{font-weight:700}.kpis{display:flex;gap:12px;flex-wrap:wrap}.kpi{flex:1;
 'use strict';
 const $=id=>document.getElementById(id);
 const apiBase='/api/finance/';
-let employees=[], policy={},previewData=null,extraItems=[],calloutItems=[],role='';
+let employees=[],coreEmployees=[],newWorkerMode=false, policy={},previewData=null,extraItems=[],calloutItems=[],role='';
 const labels={
  salary:'الراتب الافتراضي',transport:'المواصلات الافتراضية',
  living_base:'أول مربوط لغلاء المعيشة',family_each:'مبلغ الفرد الأسري',
@@ -211,6 +231,52 @@ function selectOptions(){
  setProfile();
 }
 function field(id,value){$(id).value=value===null||value===undefined?'':String(value)}
+function workerFields(){
+ return {
+  code:$('workerCode').value.trim(),name:$('workerName').value.trim(),device_user_id:$('workerDevice').value.trim(),
+  department:$('workerDepartment').value.trim(),position:$('workerPosition').value.trim(),
+  type:$('workerType').value,status:$('workerStatus').value,notes:$('workerNotes').value.trim(),
+  basic_salary:Number($('workerSalary').value||0),transport_allowance:Number($('workerTransport').value||0),
+  daily_incentive:Number($('workerDaily').value||0),evening_amount:Number($('workerEvening').value||0)
+ };
+}
+function displayWorker(){
+ const id=$('profileEmployee').value;
+ const e=newWorkerMode?null:coreEmployees.find(x=>x.id===id);
+ const fields={workerCode:e?.code||'',workerName:e?.name||'',workerDevice:e?.device_user_id||'',
+  workerDepartment:e?.department||'',workerPosition:e?.position||'',workerType:e?.type||'regular',
+  workerStatus:e?.status||'active',workerNotes:e?.notes||'',workerSalary:e?.basic_salary??0,
+  workerTransport:e?.transport_allowance??0,workerDaily:e?.daily_incentive??0,workerEvening:e?.evening_amount??0};
+ Object.entries(fields).forEach(([id,value])=>field(id,value));
+ const editable=role==='admin'||role==='hr';
+ document.querySelectorAll('#workerFields input,#workerFields select,#workerFields textarea').forEach(el=>el.disabled=!editable);
+ $('saveWorker').disabled=!editable;$('newWorker').disabled=!editable;
+ $('saveWorker').textContent=newWorkerMode?'حفظ عامل جديد':'حفظ بيانات العامل';
+ $('saveProfile').disabled=newWorkerMode||role==='hr';
+}
+async function employeeApi(method='GET',id=null,body=null){
+ const url='/api/employees'+(id?'/'+encodeURIComponent(id):'');
+ const res=await fetch(url,{method,credentials:'same-origin',cache:'no-store',
+  headers:body?{'content-type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
+ const data=await res.json().catch(()=>({error:'تعذر قراءة بيانات العامل'}));
+ if(!res.ok)throw Error(data.error||'تعذر حفظ بيانات العامل');
+ return data;
+}
+$('newWorker').addEventListener('click',()=>{newWorkerMode=true;$('profileEmployee').value='';setProfile();});
+$('undoWorker').addEventListener('click',()=>{newWorkerMode=false;setProfile();});
+$('saveWorker').addEventListener('click',()=>attempt(async()=>{
+ if(!['admin','hr'].includes(role))throw Error('ليس لديك صلاحية تعديل بيانات العامل');
+ const data=workerFields();
+ if(!data.code||!data.name)throw Error('أدخل الرقم الوظيفي واسم العامل');
+ if([data.basic_salary,data.transport_allowance,data.daily_incentive,data.evening_amount].some(x=>!Number.isFinite(x)||x<0))throw Error('القيم المالية يجب أن تكون موجبة أو صفرًا');
+ const id=$('profileEmployee').value,created=newWorkerMode;
+ if(!created&&!id)throw Error('اختر العامل');
+ const saved=await employeeApi(created?'POST':'PUT',created?null:id,data);
+ newWorkerMode=false;await loadEmployees();
+ $('profileEmployee').value=created?saved.item?.id:id;
+ setProfile();if(role!=='hr')await loadPreview();
+ notice(created?'تم إنشاء ملف العامل وربطه بالقوائم':'حُفظت البيانات الوظيفية وربطت بالتقارير');
+}));
 function setProfile(){
  const e=employees.find(e=>e.id===$('profileEmployee').value);
  const p=e?.profile||{};
@@ -218,8 +284,9 @@ function setProfile(){
  field('sal',p.salary_override);field('transport',p.transport_override);
  field('companyIns',p.company_insurance);field('totalIns',p.total_insurance);field('tax',p.income_tax);
  field('achievement',p.achievement_bonus??0);
+ displayWorker();
 }
-$('profileEmployee').addEventListener('change',setProfile);$('undoProfile').addEventListener('click',setProfile);
+$('profileEmployee').addEventListener('change',()=>{newWorkerMode=false;setProfile();});$('undoProfile').addEventListener('click',setProfile);
 $('saveProfile').addEventListener('click',()=>attempt(async()=>{
  const id=$('profileEmployee').value;if(!id)throw Error('اختر العامل');
  const val=id=>$(id).value.trim(),nullable=id=>val(id)===''?null:Number(val(id));
@@ -345,8 +412,8 @@ function monthCycle(month){
  return month?month:'';
 }
 async function loadEmployees(){
- const j=await api('profiles');const old=$('profileEmployee').value;
- employees=j.items||[];
+ const [j,core]=await Promise.all([api('profiles'),employeeApi()]);const old=$('profileEmployee').value;
+ employees=j.items||[];coreEmployees=core.items||[];
  selectOptions();if(employees.some(e=>e.id===old)){$('profileEmployee').value=old;setProfile();}
 }
 function renderPreview(){

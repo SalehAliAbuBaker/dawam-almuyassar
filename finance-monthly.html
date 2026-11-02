@@ -119,14 +119,14 @@ tfoot td{font-weight:700}.kpis{display:flex;gap:12px;flex-wrap:wrap}.kpi{flex:1;
 <section id="extras" class="panel">
  <div class="card">
   <h2>تسجيل العمل الإضافي</h2>
-  <p class="muted">المبلغ مقطوع بحسب المهمة. لا يتجاوز مجموع مهام العامل الإضافية والاستدعاء 7,000 ريال في اليوم، ولا يتطلب بصمة، ولا يدخل الحافز إلا بعد الاعتماد.</p>
+  <p class="muted">المبلغ مقطوع بحسب المهمة. لا يتجاوز مجموع مهام العامل الإضافية والاستدعاء 8,000 ريال في اليوم، ولا يتطلب بصمة، ولا يدخل الحافز إلا بعد الاعتماد.</p>
   <div class="grid">
    <div class="field"><label for="extraEmployee">العامل</label><select id="extraEmployee"></select></div>
    <div class="field"><label for="extraDate">يوم العمل</label><input id="extraDate" type="date"></div>
    <div class="field"><label for="extraTask">نوع المهمة</label><input id="extraTask" placeholder="اسم المهمة"></div>
    <div class="field"><label for="extraAmount">المبلغ</label><input id="extraAmount" type="number" min="3000" max="7000" value="3000"></div>
   </div>
-  <div class="actions"><span id="extraRemaining" class="muted">المتبقي من سقف 7,000 ريال</span><button id="saveExtra">تسجيل مهمة بانتظار الاعتماد</button></div>
+  <div class="actions"><span id="extraRemaining" class="muted">المتبقي من سقف 8,000 ريال</span><button id="saveExtra">تسجيل مهمة بانتظار الاعتماد</button></div>
  </div>
  <div class="card">
   <h2>سجل الأعمال الإضافية للدورة المحددة</h2>
@@ -137,7 +137,7 @@ tfoot td{font-weight:700}.kpis{display:flex;gap:12px;flex-wrap:wrap}.kpi{flex:1;
 <section id="callouts" class="panel">
  <div class="card">
   <h2>الاستدعاء — إدخال الساعات يدويًا</h2>
-  <p class="muted">تُكتب ساعات العمل يدويًا دون تسجيل وقت البداية والنهاية أو استخدام البصمة. الساعة الأولى 3,000 ريال، وكل ساعة تالية 1,000 ريال. المجموع اليومي لكل عامل لا يتجاوز 7,000 ريال عند جمع الاستدعاء والمهام الإضافية، ولا تدخل المستحقات إلا بعد اعتمادها.</p>
+  <p class="muted">تُكتب ساعات العمل يدويًا دون تسجيل وقت البداية والنهاية أو استخدام البصمة. الساعة الأولى 3,000 ريال، وكل ساعة تالية 1,000 ريال. المجموع اليومي لكل عامل لا يتجاوز 8,000 ريال عند جمع الاستدعاء والمهام الإضافية، ولا تدخل المستحقات إلا بعد اعتمادها.</p>
   <div class="grid">
    <div class="field"><label for="calloutEmployee">العامل</label><select id="calloutEmployee"></select></div>
    <div class="field"><label for="calloutDate">تاريخ الاستدعاء</label><input id="calloutDate" type="date"></div>
@@ -304,7 +304,7 @@ function renderPreview(){
    (registered.length?'<div style="grid-column:1/-1">الحركات المعتمدة: '+safe(registered.join(' | '))+'</div>':'')+
    '</div></details></td></tr>';
  }).join('')||'<tr><td colspan="11">لا توجد نتائج</td></tr>';
- $('previewFoot').textContent='مسودة للمراجعة، وليست كشف صرف. النجمة (*) تعني نقص التأمين أو الضريبة. الحافز المعروض قبل تسوية رصيد الدوام وخصومات التأخير، والإضافي والاستدعاء بحد 7,000 ريال للعامل يوميًا.';
+ $('previewFoot').textContent='مسودة للمراجعة، وليست كشف صرف. النجمة (*) تعني نقص التأمين أو الضريبة. الحافز المعروض قبل تسوية رصيد الدوام وخصومات التأخير، والإضافي والاستدعاء بحد 8,000 ريال للعامل يوميًا.';
 }
 async function loadPreview(){
  const month=$('month').value;
@@ -337,9 +337,9 @@ function dailyReserved(employee,date){
 function refreshExtraLimit(){
  const used=dailyReserved($('extraEmployee').value,$('extraDate').value);
  const value=Number($('extraAmount').value);
- const available=Math.max(0,7000-used);
+ const available=Math.max(0,8000-used);
  $('extraRemaining').textContent='المتاح لهذا العامل في هذا اليوم: '+money(available)+' ريال';
- $('saveExtra').disabled=!(Number.isFinite(value)&&value>=3000&&value<=7000&&used+value<=7000);
+ $('saveExtra').disabled=!(Number.isFinite(value)&&value>=3000&&value<=8000&&used+value<=8000);
 }
 ['extraEmployee','extraDate','extraAmount'].forEach(id=>$(id).addEventListener('change',refreshExtraLimit));
 $('extraAmount').addEventListener('input',refreshExtraLimit);
@@ -349,10 +349,10 @@ function refreshCalloutEstimate(){
  const used=dailyReserved($('calloutEmployee').value,$('calloutDate').value);
  const valid=Number.isInteger(hours)&&hours>=1&&hours<=23;
  const amount=valid?Number(policy.callout_first_hour??3000)+(hours-1)*Number(policy.callout_additional_hour??1000):0;
- const available=Math.max(0,7000-used);
- const allowed=valid&&amount<=available&&amount<=7000;
+ const available=Math.max(0,8000-used);
+ const allowed=valid&&amount<=available&&amount<=8000;
  $('saveCallout').disabled=!allowed;
- $('calloutEstimate').textContent=!valid?'أدخل عدد الساعات يدويًا':allowed?'قيمة الاستدعاء: '+money(amount)+' ريال؛ المتاح يوميًا: '+money(available)+' ريال':'يتجاوز سقف 7,000 ريال؛ المتاح لهذا اليوم: '+money(available)+' ريال';
+ $('calloutEstimate').textContent=!valid?'أدخل عدد الساعات يدويًا':allowed?'قيمة الاستدعاء: '+money(amount)+' ريال؛ المتاح يوميًا: '+money(available)+' ريال':'يتجاوز سقف 8,000 ريال؛ المتاح لهذا اليوم: '+money(available)+' ريال';
 }
 $('calloutHours').addEventListener('input',refreshCalloutEstimate);
 async function loadCallouts(){

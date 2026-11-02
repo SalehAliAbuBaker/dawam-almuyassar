@@ -6,6 +6,42 @@
   const label='إدارة المستخدمين والصلاحيات';
   const deviceSyncUrl='/mb10-sync.html';
   const financeUrl='/finance-monthly.html';
+  const brandFont='Tahoma,Arial,sans-serif';
+  const monthlyIcon='<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true" focusable="false"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M7 2v4M17 2v4M3 9h18M8 13h3M14 13h3M8 17h3M14 17l1.5 1.5L18 16"/></svg>';
+  function mountBrand(){
+    if(!document.getElementById('dawam-consistent-font')){
+      const el=document.createElement('style');el.id='dawam-consistent-font';
+      el.textContent='html,body,button,input,select,textarea,option{font-family:Tahoma,Arial,sans-serif!important}';
+      document.head.appendChild(el);
+    }
+    let manifest=document.querySelector('link[rel="manifest"]');
+    if(!manifest){manifest=document.createElement('link');manifest.rel='manifest';document.head.appendChild(manifest);}
+    manifest.href='/dawam.webmanifest';
+    let icon=document.querySelector('link[rel="icon"]');
+    if(!icon){icon=document.createElement('link');icon.rel='icon';document.head.appendChild(icon);}
+    icon.href='/offline-icon.svg';icon.type='image/svg+xml';
+    let touch=document.querySelector('link[rel="apple-touch-icon"]');
+    if(!touch){touch=document.createElement('link');touch.rel='apple-touch-icon';document.head.appendChild(touch);}
+    touch.href='/app-icon-192.png';
+  }
+  function decorateMonthlyLinks(){
+    document.querySelectorAll('a[href*="finance-monthly.html"]').forEach(el=>{
+      if(!el.querySelector('.dawam-monthly-icon')){
+       const wrapper=document.createElement('span');wrapper.className='dawam-monthly-icon';wrapper.style.cssText='display:inline-flex;vertical-align:middle;flex-shrink:0;margin-inline-end:7px';
+       wrapper.innerHTML=monthlyIcon;el.prepend(wrapper);
+      }
+    });
+  }
+  function consolidateWorkerNavigation(){
+    // Only hide the legacy navigation when the unified profile is available to the same user.
+    if(!canFinance||!document.querySelector('a[href*="finance-monthly.html"]'))return;
+    const item=findMenuNode(['العاملون']);
+    if(!item)return;
+    const row=item.closest('li');
+    const node=row && displayText(row).length<45?row:item;
+    node.style.setProperty('display','none','important');
+    node.setAttribute('data-dawam-consolidated','true');
+  }
   let canFinance=false;
   let financeMonthlyMinutes=375; // Latest approved monthly balance; draft preview until attendance integration.
   let isAdmin=false, canSync=false, hasPersonal=false, checking=false, mounting=false;
@@ -71,7 +107,8 @@
     if(!menu&&!side)return;
     const link=document.createElement('a');
     link.href=financeUrl;
-    link.textContent='الحافز الشهري والخصومات';
+    link.innerHTML=monthlyIcon+'<span>الحافز الشهري والخصومات</span>';
+    link.style.gap='8px';
     link.className='dawam-finance-entry';
     link.setAttribute('aria-label','فتح الحافز الشهري والخصومات');
     link.style.cssText=style;
@@ -230,7 +267,7 @@
       if(!canSync)document.querySelectorAll('.dawam-device-sync-entry').forEach(el=>el.remove());
       else mountDeviceSync();
       if(!canFinance)document.querySelectorAll('.dawam-finance-entry').forEach(el=>el.remove());
-      else {mountFinance();readFinanceMonthlyBalance();}
+      else {mountFinance();decorateMonthlyLinks();consolidateWorkerNavigation();readFinanceMonthlyBalance();}
       mountFinanceRule();
       if(!hasPersonal)document.querySelectorAll('.dawam-my-attendance-entry').forEach(el=>el.remove());
       else mountPersonal();
@@ -242,6 +279,7 @@
   const observer=new MutationObserver(() => {
     mountVersion();
     mountFinanceRule();
+    if(canFinance){decorateMonthlyLinks();consolidateWorkerNavigation();}
     if(isAdmin && !mounting && !document.querySelector('.dawam-permissions-entry')) {
       requestAnimationFrame(mount);
     }
@@ -264,6 +302,7 @@
     document.head.append(script);
   }
   function start() {
+    mountBrand();
     loadEmbeddedUserEditor();
     observer.observe(document.body,{childList:true,subtree:true});
     mountVersion();

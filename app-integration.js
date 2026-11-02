@@ -1,4 +1,4 @@
-/* Dawam 0.2.32 — non-invasive admin and personal attendance navigation.
+/* Dawam 0.2.33 — non-invasive admin and personal attendance navigation.
    No access tokens, employee data, or passwords are stored by this script. */
 (() => {
   'use strict';
@@ -6,14 +6,22 @@
   const label='إدارة المستخدمين والصلاحيات';
   const deviceSyncUrl='/mb10-sync.html';
   const financeUrl='/finance-monthly.html';
-  const brandFont='Tahoma,Arial,sans-serif';
+  const brandFont='inherit';
   const monthlyIcon='<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true" focusable="false"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M7 2v4M17 2v4M3 9h18M8 13h3M14 13h3M8 17h3M14 17l1.5 1.5L18 16"/></svg>';
+  function rememberOriginalFont(){
+    // The main dashboard is the source of truth for typography, not the finance module.
+    try{
+      const family=getComputedStyle(document.body).fontFamily;
+      if(family && family.length<=180 && !/[;{}<>]/.test(family)){
+        localStorage.setItem('dawam-original-font-family',family);
+      }
+    }catch(_){}
+  }
   function mountBrand(){
-    if(!document.getElementById('dawam-consistent-font')){
-      const el=document.createElement('style');el.id='dawam-consistent-font';
-      el.textContent='html,body,button,input,select,textarea,option{font-family:Tahoma,Arial,sans-serif!important}';
-      document.head.appendChild(el);
-    }
+    // Respect the original CSS; do not override its typeface or heading sizes.
+    const imposed=document.getElementById('dawam-consistent-font');
+    if(imposed)imposed.remove();
+    rememberOriginalFont();
     let manifest=document.querySelector('link[rel="manifest"]');
     if(!manifest){manifest=document.createElement('link');manifest.rel='manifest';document.head.appendChild(manifest);}
     manifest.href='/dawam.webmanifest';
@@ -22,7 +30,7 @@
     icon.href='/offline-icon.svg';icon.type='image/svg+xml';
     let touch=document.querySelector('link[rel="apple-touch-icon"]');
     if(!touch){touch=document.createElement('link');touch.rel='apple-touch-icon';document.head.appendChild(touch);}
-    touch.href='/app-icon-192.png';
+    touch.href='/offline-icon.svg';
   }
   function decorateMonthlyLinks(){
     document.querySelectorAll('a[href*="finance-monthly.html"]').forEach(el=>{
@@ -45,8 +53,8 @@
   let canFinance=false;
   let financeMonthlyMinutes=375; // Latest approved monthly balance; draft preview until attendance integration.
   let isAdmin=false, canSync=false, hasPersonal=false, checking=false, mounting=false;
-  const style='display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 14px;border-radius:10px;background:#167a4d;color:white;text-decoration:none;font:600 14px Tahoma,Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.12);max-width:100%;';
-  const htmlLabel=label+' — 0.2.32';
+  const style='display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 14px;border-radius:10px;background:#167a4d;color:white;text-decoration:none;font:600 14px inherit;box-shadow:0 2px 8px rgba(0,0,0,.12);max-width:100%;';
+  const htmlLabel=label+' — 0.2.33';
 
   function makeLink() {
     const el=document.createElement('a');
@@ -181,8 +189,8 @@
   }
   // Keep the visible stage version consistent without rewriting the 2.9 MB application file.
   function mountVersion(){
-    const version='0.2.32';
-    const outdated=/0\.2\.(?:12|15|16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31)/g;
+    const version='0.2.33';
+    const outdated=/0\.2\.(?:12|15|16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31|32)/g;
     const title=document.title.replace(outdated,version);
     if(title!==document.title)document.title=title;
     for(const el of [document.querySelector('.login-art small'),document.getElementById('appVersion'),document.querySelector('.side-footer small')]){
@@ -296,7 +304,7 @@
   function loadEmbeddedUserEditor(){
     if(document.querySelector('script[data-dawam-user-modal]'))return;
     const script=document.createElement('script');
-    script.src='/user-management-modal.js?v=0.2.32';
+    script.src='/user-management-modal.js?v=0.2.33';
     script.defer=true;
     script.dataset.dawamUserModal='1';
     document.head.append(script);

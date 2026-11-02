@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#13734a">
-<title>الاستحقاقات والحافز الشهري | دوام الميسر 0.2.29</title>
+<title>الاستحقاقات والحافز الشهري | دوام الميسر 0.2.30</title>
 <style>
 :root{color-scheme:light;--g:#116b43;--g2:#eaf5ee;--line:#dae7dd;--ink:#17382b;--muted:#60786c;--bg:#f5f8f5;--warn:#8c4e12}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.65 Tahoma,Arial,sans-serif}
@@ -37,7 +37,7 @@ tfoot td{font-weight:700}.kpis{display:flex;gap:12px;flex-wrap:wrap}.kpi{flex:1;
  .table-wrap{overflow:visible;border:none}#preview table{min-width:0;table-layout:fixed;width:100%;font-size:8px}
  table th,table td{font-size:8px;padding:4px 3px;white-space:normal;overflow-wrap:anywhere}
  th{position:static}tr{break-inside:avoid}td:first-child{width:17%}
- .detail-line{font-size:8px}.detail-values{display:none}.print-heading{display:block;margin:5px 0}
+ .detail-line{display:none!important}.print-details .detail-line{display:table-row!important;font-size:8px}.print-details .detail-values{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px}.print-heading{display:block;margin:5px 0}
  .grid,#stats{display:none!important}#cycleLabel{display:block;font-weight:bold}
 }
 
@@ -46,7 +46,7 @@ tfoot td{font-weight:700}.kpis{display:flex;gap:12px;flex-wrap:wrap}.kpi{flex:1;
 <body>
 <main>
 <header>
- <div><h1>الاستحقاقات والحافز الشهري</h1><small>دوام الميسر — النسخة التجريبية 0.2.29</small></div>
+ <div><h1>الاستحقاقات والحافز الشهري</h1><small>دوام الميسر — النسخة التجريبية 0.2.30</small></div>
  <a class="button secondary" href="/">العودة إلى التطبيق</a>
 </header>
 <div class="banner"><strong>وضع تجريبي آمن:</strong> الحسابات المعروضة مسودات فقط، ولا تُعتمد للصرف ولا تُغيّر الأرصدة أو سجلات البصمة. تسوية رصيد الدوام وخصومات التأخير ما زالت بانتظار ربط الحضور المعتمد.</div>
@@ -66,7 +66,7 @@ tfoot td{font-weight:700}.kpis{display:flex;gap:12px;flex-wrap:wrap}.kpi{flex:1;
    <div class="field"><label for="month">الشهر المالي</label><input id="month" type="month"></div>
    <div class="field"><label for="query">البحث باسم العامل أو الرقم الوظيفي</label><input id="query" placeholder="بحث سريع"></div>
   </div>
-  <div class="actions"><button id="refresh">احتساب المسودة</button><button class="secondary" id="wide" type="button" aria-pressed="false">عرض أفقي موسع</button><button class="secondary" id="print" type="button">طباعة أفقية A4</button></div>
+  <div class="actions"><button id="refresh">احتساب المسودة</button><button class="secondary" id="wide" type="button" aria-pressed="false">عرض أفقي موسع</button><button class="secondary" id="print" type="button">طباعة أفقية A4</button><button class="secondary" id="printDetail" type="button">طباعة كشف تفصيلي أفقي</button></div>
   <small id="cycleLabel"></small>
  </div>
  <div class="card">
@@ -119,14 +119,14 @@ tfoot td{font-weight:700}.kpis{display:flex;gap:12px;flex-wrap:wrap}.kpi{flex:1;
 <section id="extras" class="panel">
  <div class="card">
   <h2>تسجيل العمل الإضافي</h2>
-  <p class="muted">المبلغ مقطوع لكل يوم بحسب نوع المهمة (من 3,000 إلى 7,000 ريال). لا يتطلب بصمة، ولا يُضاف للمسودة المالية إلا بعد اعتماده.</p>
+  <p class="muted">المبلغ مقطوع بحسب المهمة. لا يتجاوز مجموع مهام العامل الإضافية والاستدعاء 7,000 ريال في اليوم، ولا يتطلب بصمة، ولا يدخل الحافز إلا بعد الاعتماد.</p>
   <div class="grid">
    <div class="field"><label for="extraEmployee">العامل</label><select id="extraEmployee"></select></div>
    <div class="field"><label for="extraDate">يوم العمل</label><input id="extraDate" type="date"></div>
    <div class="field"><label for="extraTask">نوع المهمة</label><input id="extraTask" placeholder="اسم المهمة"></div>
    <div class="field"><label for="extraAmount">المبلغ</label><input id="extraAmount" type="number" min="3000" max="7000" value="3000"></div>
   </div>
-  <div class="actions"><button id="saveExtra">تسجيل مهمة بانتظار الاعتماد</button></div>
+  <div class="actions"><span id="extraRemaining" class="muted">المتبقي من سقف 7,000 ريال</span><button id="saveExtra">تسجيل مهمة بانتظار الاعتماد</button></div>
  </div>
  <div class="card">
   <h2>سجل الأعمال الإضافية للدورة المحددة</h2>
@@ -137,7 +137,7 @@ tfoot td{font-weight:700}.kpis{display:flex;gap:12px;flex-wrap:wrap}.kpi{flex:1;
 <section id="callouts" class="panel">
  <div class="card">
   <h2>الاستدعاء — إدخال الساعات يدويًا</h2>
-  <p class="muted">تُكتب ساعات العمل يدويًا دون تسجيل وقت البداية والنهاية أو استخدام البصمة. الساعة الأولى 3,000 ريال، وكل ساعة تالية 1,000 ريال. يُحسب المبلغ للعرض ويُضاف إلى كشف الحافز بعد الاعتماد.</p>
+  <p class="muted">تُكتب ساعات العمل يدويًا دون تسجيل وقت البداية والنهاية أو استخدام البصمة. الساعة الأولى 3,000 ريال، وكل ساعة تالية 1,000 ريال. المجموع اليومي لكل عامل لا يتجاوز 7,000 ريال عند جمع الاستدعاء والمهام الإضافية، ولا تدخل المستحقات إلا بعد اعتمادها.</p>
   <div class="grid">
    <div class="field"><label for="calloutEmployee">العامل</label><select id="calloutEmployee"></select></div>
    <div class="field"><label for="calloutDate">تاريخ الاستدعاء</label><input id="calloutDate" type="date"></div>
@@ -166,7 +166,7 @@ tfoot td{font-weight:700}.kpis{display:flex;gap:12px;flex-wrap:wrap}.kpi{flex:1;
 'use strict';
 const $=id=>document.getElementById(id);
 const apiBase='/api/finance/';
-let employees=[], policy={},previewData=null,extraItems=[],role='';
+let employees=[], policy={},previewData=null,extraItems=[],calloutItems=[],role='';
 const labels={
  salary:'الراتب الافتراضي',transport:'المواصلات الافتراضية',
  living_base:'أول مربوط لغلاء المعيشة',family_each:'مبلغ الفرد الأسري',

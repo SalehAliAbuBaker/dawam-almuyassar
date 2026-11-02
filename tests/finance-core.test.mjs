@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {DEFAULTS,cycle,experienceYears,experiencePay,projection} from '../lib/finance-module.js';
+import {DEFAULTS,cycle,experienceYears,experiencePay,projection,calloutPay,DAILY_OVERTIME_CAP} from '../lib/finance-module.js';
 
 test('finance cycle is inclusive 26 prior month through 25 named month',()=>{
  assert.deepEqual(cycle('2026-11'),{month:'2026-11',from:'2026-10-26',to:'2026-11-25'});
@@ -58,4 +58,27 @@ test('approved extras only, missing salary fields block readiness',()=>{
  assert.equal(x.salary.complete,false);
  assert.equal(x.attendance_state,'pending_verified_attendance');
  assert.equal(x.extras_pending,1);
+});
+
+test('manually entered whole callout hours are priced first 3000, then 1000 each and capped',()=>{
+ assert.equal(DAILY_OVERTIME_CAP,7000);
+ assert.equal(calloutPay(1,DEFAULTS),3000);
+ assert.equal(calloutPay(2,DEFAULTS),4000);
+ assert.equal(calloutPay(4,DEFAULTS),6000);
+ assert.equal(calloutPay(5,DEFAULTS),7000);
+ assert.throws(()=>calloutPay(6,DEFAULTS),/7,000/);
+ assert.throws(()=>calloutPay(0,DEFAULTS));
+ assert.throws(()=>calloutPay(1.5,DEFAULTS));
+});
+test('only approved callouts contribute to the monthly report',()=>{
+ const calls=[
+  {status:'approved',amount:4000,work_date:'2026-11-01',task:'استدعاء أول',duration_minutes:120},
+  {status:'pending',amount:3000,work_date:'2026-11-01',task:'استدعاء آخر',duration_minutes:60}
+ ];
+ const r=projection(worker,profile,null,[],DEFAULTS,cycle('2026-11'),calls);
+ assert.equal(r.incentive.approved_callouts,4000);
+ assert.equal(r.callouts_pending,1);
+ assert.equal(r.report_sources.approved_callouts.length,1);
+ assert.equal(r.report_sources.pending_callouts,1);
+ assert.equal(r.safe_to_finalize,false);
 });

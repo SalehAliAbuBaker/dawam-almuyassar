@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#13734a">
-<title>الاستحقاقات والحافز الشهري | دوام الميسر 0.2.30</title>
+<title>الاستحقاقات والحافز الشهري | دوام الميسر 0.2.31</title>
 <style>
 :root{color-scheme:light;--g:#116b43;--g2:#eaf5ee;--line:#dae7dd;--ink:#17382b;--muted:#60786c;--bg:#f5f8f5;--warn:#8c4e12}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.65 Tahoma,Arial,sans-serif}
@@ -46,7 +46,7 @@ tfoot td{font-weight:700}.kpis{display:flex;gap:12px;flex-wrap:wrap}.kpi{flex:1;
 <body>
 <main>
 <header>
- <div><h1>الاستحقاقات والحافز الشهري</h1><small>دوام الميسر — النسخة التجريبية 0.2.30</small></div>
+ <div><h1>الاستحقاقات والحافز الشهري</h1><small>دوام الميسر — النسخة التجريبية 0.2.31</small></div>
  <a class="button secondary" href="/">العودة إلى التطبيق</a>
 </header>
 <div class="banner"><strong>وضع تجريبي آمن:</strong> الحسابات المعروضة مسودات فقط، ولا تُعتمد للصرف ولا تُغيّر الأرصدة أو سجلات البصمة. تسوية رصيد الدوام وخصومات التأخير ما زالت بانتظار ربط الحضور المعتمد.</div>
@@ -105,7 +105,16 @@ tfoot td{font-weight:700}.kpis{display:flex;gap:12px;flex-wrap:wrap}.kpi{flex:1;
    <div class="field"><label for="evaluationEmployee">العامل</label><select id="evaluationEmployee"></select></div>
    <div class="field"><label for="evaluationMonth">شهر بدء سريان التقييم</label><input id="evaluationMonth" type="month"></div>
   </div>
-  <p class="muted">التقييم جماعي، واعتماد النتيجة من المستخدم المخوّل. يبدأ الاستحقاق الشهري في شهر الاعتماد ويستمر حتى التقييم التالي. لا يمكن استبدال تقييم معتمد للشهر نفسه دون إجراء تصحيح مستقل.</p>
+  <p class="muted">المعايير السبعة وأوزانها دون تغيير. أدخل نسبة من 0 إلى 100% للمعايير الستة الأخرى؛ «الالتزام في الدوام» (25 درجة) يُحتسب من بصمات الدورة الشهرية وحدها، ولا يُدخل يدويًا. لا تُرحل درجة التزام شهر سابق إلى الشهر الجديد.</p>
+  <div class="card" style="box-shadow:none">
+   <h3>معاينة الالتزام في الدوام من البصمة</h3>
+   <p id="attendanceRatingSummary" class="muted">اختر العامل والشهر لعرض نسبة البصمة.</p>
+   <div id="attendanceRatingDays" class="muted"></div>
+   <div class="actions no-print"><button class="secondary" id="loadAttendanceRating" type="button">تحديث قراءة البصمة</button></div>
+   <div class="field" style="margin-top:12px"><label for="attendanceRatingNote">ملاحظة مراجعة المدير</label><input id="attendanceRatingNote" placeholder="مراجعة المزامنة والغياب والإجازات"></div>
+   <label style="display:flex;align-items:center;gap:8px;margin-top:9px"><input type="checkbox" id="attendanceRatingConfirmed" style="width:auto">تحققت من اكتمال المزامنة ومراجعة الأيام دون بصمة، وأنها غياب فعلي وليست إجازة أو عطلًا في الجهاز.</label>
+   <div class="actions no-print"><button id="approveAttendanceRating" type="button">اعتماد نسبة الالتزام لهذا الشهر</button></div>
+  </div>
   <div id="evaluationRows"></div>
   <div class="grid">
    <div class="field"><label for="evaluationNote">ملاحظات اللجنة</label><textarea id="evaluationNote" rows="2"></textarea></div>

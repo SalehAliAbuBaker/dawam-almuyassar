@@ -137,7 +137,7 @@ tfoot td{font-weight:700}.kpis{display:flex;gap:12px;flex-wrap:wrap}.kpi{flex:1;
 <section id="callouts" class="panel">
  <div class="card">
   <h2>الاستدعاء — إدخال الساعات يدويًا</h2>
-  <p class="muted">تُكتب ساعات العمل يدويًا دون تسجيل وقت البداية والنهاية أو استخدام البصمة. الساعة الأولى 3,000 ريال، وكل ساعة تالية 1,000 ريال. المجموع اليومي لكل عامل لا يتجاوز 8,000 ريال عند جمع الاستدعاء والمهام الإضافية، ولا تدخل المستحقات إلا بعد اعتمادها.</p>
+  <p class="muted">تُكتب ساعات العمل يدويًا دون تسجيل وقت البداية والنهاية أو استخدام البصمة. الساعة الأولى 3,000 ريال، وكل ساعة تالية 1,000 ريال، ويُوقف ارتفاع المبلغ عند 8,000 ريال مهما زادت ساعات الاستدعاء. المجموع اليومي لكل عامل لا يتجاوز 8,000 ريال عند جمع الاستدعاء والمهام الإضافية، ولا تدخل المستحقات إلا بعد اعتمادها.</p>
   <div class="grid">
    <div class="field"><label for="calloutEmployee">العامل</label><select id="calloutEmployee"></select></div>
    <div class="field"><label for="calloutDate">تاريخ الاستدعاء</label><input id="calloutDate" type="date"></div>
@@ -348,7 +348,7 @@ function refreshCalloutEstimate(){
  const hours=Number($('calloutHours').value);
  const used=dailyReserved($('calloutEmployee').value,$('calloutDate').value);
  const valid=Number.isInteger(hours)&&hours>=1&&hours<=23;
- const amount=valid?Number(policy.callout_first_hour??3000)+(hours-1)*Number(policy.callout_additional_hour??1000):0;
+ const amount=valid?Math.min(8000,Number(policy.callout_first_hour??3000)+(hours-1)*Number(policy.callout_additional_hour??1000)):0;
  const available=Math.max(0,8000-used);
  const allowed=valid&&amount<=available&&amount<=8000;
  $('saveCallout').disabled=!allowed;

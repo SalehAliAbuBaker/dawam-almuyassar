@@ -294,7 +294,7 @@ async function loadHistory(){
  const d=await api('evaluations?employee_id='+encodeURIComponent(id));
  $('evaluationHistory').innerHTML=d.items.length?d.items.map(x=>'<div>'+safe(x.effective_month)+' — '+money(x.scores.reduce((a,b,i)=>a+(i===2?0:b),0))+' من 75 درجة للجنة</div>').join(''):'لا توجد تقييمات محفوظة';
  const earlier=d.items.find(x=>x.effective_month<=month);
- caps.forEach((cap,i)=>{if(i!==2)$('score'+i).value=earlier?String(Number((Number(earlier.scores[i])*100/cap).toFixed(2))):'0';});
+ caps.forEach((cap,i)=>{if(i!==2)$('score'+i).value=earlier?(Array.isArray(earlier.percentages)?String(earlier.percentages[i]):String(Number((Number(earlier.scores[i])*100/cap).toFixed(2)))):'0';});
  $('evaluationNote').value=earlier?.note||'';
  evaluationBaseline={...evaluationInput(),source:earlier?.effective_month||null};
  shownEvalEmployee=id;shownEvalMonth=month;
